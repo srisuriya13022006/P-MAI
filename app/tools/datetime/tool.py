@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Any, Callable
+from datetime import datetime, timedelta
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -11,11 +11,19 @@ from app.tools.datetime.timezone import TimezoneResolver
 class DateTimeInput(BaseModel):
     location: str | None = Field(
         default=None,
-        description="City or region, for example 'New York' or 'Kolkata'.",
+        description="City or region, for example 'New York', 'Tokyo', or 'Kolkata'.",
     )
     timezone: str | None = Field(
         default=None,
-        description="IANA timezone, for example 'America/New_York'.",
+        description="IANA timezone, for example 'America/New_York', 'Asia/Tokyo', or 'UTC'.",
+    )
+    relative_day: Literal["today", "tomorrow", "yesterday", "current", "now"] | None = Field(
+        default="today",
+        description="Relative day reference: 'today', 'tomorrow', or 'yesterday'.",
+    )
+    query_type: Literal["date", "time", "day", "datetime"] | None = Field(
+        default=None,
+        description="Specific datetime field requested: 'date', 'time', 'day', or 'datetime'.",
     )
 
     @model_validator(mode="after")
@@ -42,7 +50,7 @@ class DateTimeTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Get the current date and time, optionally for a city or IANA timezone."
+            "Get the current or relative date and time, optionally for a city or IANA timezone."
         )
 
     @property
@@ -52,21 +60,45 @@ class DateTimeTool(BaseTool):
     def run(self, **kwargs: Any) -> ToolResult:
         try:
             arguments = self.input_schema.model_validate(kwargs)
-            timezone, timezone_name = self._timezone_resolver.resolve(
+            tz, timezone_name = self._timezone_resolver.resolve(
                 location=arguments.location,
                 timezone=arguments.timezone,
             )
-            now = self._clock(timezone)
+            now = self._clock(tz)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=tz)
+            else:
+                now = now.astimezone(tz)
+
+            rel = (arguments.relative_day or "today").strip().lower()
+            if rel == "tomorrow":
+                target_dt = now + timedelta(days=1)
+            elif rel == "yesterday":
+                target_dt = now - timedelta(days=1)
+            elif rel in ("today", "current", "now"):
+                target_dt = now
+            else:
+                raise ValueError(
+                    f"Unsupported relative day '{arguments.relative_day}'. "
+                    "Use 'today', 'tomorrow', or 'yesterday'."
+                )
+
+            data = {
+                "date": target_dt.strftime("%Y-%m-%d"),
+                "time": target_dt.strftime("%H:%M:%S"),
+                "day": target_dt.strftime("%A"),
+                "timezone": timezone_name,
+                "relative_day": "tomorrow" if rel == "tomorrow" else ("yesterday" if rel == "yesterday" else "today"),
+            }
+            if arguments.query_type:
+                data["query_type"] = arguments.query_type
+            if arguments.location:
+                data["location"] = arguments.location
 
             return ToolResult(
                 tool_name=self.name,
                 success=True,
-                data={
-                    "date": now.strftime("%Y-%m-%d"),
-                    "time": now.strftime("%H:%M:%S"),
-                    "day": now.strftime("%A"),
-                    "timezone": timezone_name,
-                },
+                data=data,
             )
 
         except Exception as exc:

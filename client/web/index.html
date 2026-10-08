@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P-MAI Voice Assistant</title>
+  <link rel="stylesheet" href="/static/voice/style.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="title-area">
+        <div class="logo-badge">M</div>
+        <div class="title-text">
+          <h1>P-MAI Voice Assistant</h1>
+          <span>Autonomous Real-Time Conversational Agent</span>
+        </div>
+      </div>
+      <div class="connection-pill">
+        <div id="conn-dot" class="status-dot"></div>
+        <span id="conn-text">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- State & Visualizer Hero -->
+    <div class="state-hero">
+      <div id="state-badge" class="state-badge">
+        <div id="pulse-indicator" class="pulse-indicator"></div>
+        <span id="state-text">Ready</span>
+      </div>
+
+      <canvas id="visualizer" class="visualizer-canvas" width="600" height="70"></canvas>
+    </div>
+
+    <!-- Live partial transcript -->
+    <div id="live-transcript" class="live-transcript-box"></div>
+
+    <!-- Error Banner -->
+    <div id="error-banner" class="error-banner"></div>
+
+    <!-- Conversation Feed -->
+    <div id="conversation-feed" class="conversation-feed">
+      <div class="message-card mai-message">
+        <div class="mai-label">MAI</div>
+        <div>Ready for voice interaction. Click Speak or press Spacebar.</div>
+      </div>
+    </div>
+
+    <!-- Main Controls -->
+    <div class="controls-area">
+      <button id="btn-speak" class="btn btn-speak">
+        🎙 Speak
+      </button>
+      <button id="btn-stop" class="btn btn-stop" title="Stop speech playback without cancelling task">
+        ⏹ Stop Speaking
+      </button>
+      <button id="btn-cancel" class="btn btn-cancel" title="Cancel active background task">
+        ❌ Cancel Task
+      </button>
+    </div>
+
+    <!-- Footer Status / Metrics -->
+    <footer class="app-footer">
+      <span id="metrics-bar">Ready</span>
+      <span>P-MAI v1.0 • P15 Desktop Voice Client</span>
+    </footer>
+  </div>
+
+  <script src="/static/voice/app.js"></script>
+</body>
+</html>

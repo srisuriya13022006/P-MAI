@@ -1,0 +1,78 @@
+{
+  "Scenario_A": {
+    "status": "PASS",
+    "prompt": "What time is it in Tokyo?",
+    "response": "The current time in Tokyo is 02:45 AM.",
+    "turn_latency_ms": 79.34,
+    "metrics": {
+      "client_turn_start": 19268.8186936,
+      "t_first_partial": 2.69,
+      "client_audio_end": 19268.8214063,
+      "t_final_transcript": 3.0,
+      "time_to_first_audio_ms": 4.5,
+      "total_turn_turnaround_ms": 79.14
+    }
+  },
+  "Scenario_B": {
+    "status": "PASS",
+    "prompt": "Calculate 125 times 32.",
+    "response": "125 multiplied by 32 is 4,000.",
+    "turn_latency_ms": 45.56,
+    "metrics": {
+      "client_turn_start": 19268.8987794,
+      "t_first_partial": 1.07,
+      "client_audio_end": 19268.8998623,
+      "t_final_transcript": 1.14,
+      "time_to_first_audio_ms": 2.58,
+      "total_turn_turnaround_ms": 45.3
+    }
+  },
+  "Scenario_C": {
+    "status": "PASS",
+    "prompt": "Find the latest Python release.",
+    "response": "Python 3.14.8 is currently the latest stable release.",
+    "turn_latency_ms": 91.13,
+    "metrics": {
+      "client_turn_start": 19268.9466812,
+      "t_first_partial": 2.37,
+      "client_audio_end": 19268.9490685,
+      "t_final_transcript": 2.45,
+      "time_to_first_audio_ms": 3.02,
+      "total_turn_turnaround_ms": 90.58
+    }
+  },
+  "Scenario_D": {
+    "status": "PASS",
+    "turn_1_ms": 91.46,
+    "turn_2_ms": 61.64,
+    "history_count": 4
+  },
+  "Scenario_E": {
+    "status": "PASS",
+    "clarification_text": "Which page would you like me to read? Please provide the URL or title.",
+    "latency_ms": 61.87
+  },
+  "Scenario_F": {
+    "status": "PASS",
+    "memory_confirmation_text": "I need your confirmation before I remember that you are learning FastAPI. Would you like me to save this?",
+    "latency_ms": 47.12
+  },
+  "Scenario_G": {
+    "status": "PASS",
+    "interruption_latency_ms": 2.38
+  },
+  "Scenario_H": {
+    "status": "PASS",
+    "cancellation_response": "Active task cancelled.",
+    "latency_ms": 91.83
+  },
+  "Scenario_I": {
+    "status": "PASS",
+    "interruption_latency_ms": 0.01
+  },
+  "Scenario_J": {
+    "status": "PASS",
+    "recovery_text": "The primary web search timed out, but I retrieved the needed facts using cached sources.",
+    "latency_ms": 87.1
+  }
+}

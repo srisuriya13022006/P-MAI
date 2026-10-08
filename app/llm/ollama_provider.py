@@ -35,3 +35,14 @@ class OllamaProvider:
         )
 
         return response["message"]["content"]
+
+
+_canonical_ollama_provider: OllamaProvider | None = None
+
+
+def get_ollama_provider() -> OllamaProvider:
+    """Return the shared canonical OllamaProvider instance."""
+    global _canonical_ollama_provider
+    if _canonical_ollama_provider is None:
+        _canonical_ollama_provider = OllamaProvider()
+    return _canonical_ollama_provider

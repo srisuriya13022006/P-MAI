@@ -1,21 +1,45 @@
 from sqlalchemy.orm import Session
 
+from app.agent.policy import is_self_identity_query
 from app.agent.orchestrator import MAIOrchestrator
+from app.core.config import settings
+from app.agent.task_state import TaskStateManager
 from app.database.repositories.conversations import ConversationRepository
 from app.database.repositories.messages import MessageRepository
+from app.database.repositories.memories import MemoryRepository
+from app.llm.ollama_provider import get_ollama_provider
+from app.memory.llm_extractor import LLMExtractionProvider
+from app.memory.service import MemoryService
+from app.memory.summarizer import ConversationSummarizer
 from app.services.message_mapper import to_llm_messages
+
+_default_task_state_manager = TaskStateManager()
 
 
 class ChatService:
     """Coordinates persistent MAI conversations."""
 
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        llm: LLMExtractionProvider | None = None,
+        task_state_manager: TaskStateManager | None = None,
+    ):
         self.db = db
+
+        provider = llm if llm is not None else get_ollama_provider()
 
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
+        self.memory_service = MemoryService(MemoryRepository(db), llm=provider)
+        self.summarizer = ConversationSummarizer()
+        self.task_state_manager = task_state_manager or _default_task_state_manager
 
-        self.orchestrator = MAIOrchestrator()
+        self.orchestrator = MAIOrchestrator(
+            self.memory_service,
+            llm=provider,
+            task_state_manager=self.task_state_manager,
+        )
 
     def chat(
         self,
@@ -24,10 +48,22 @@ class ChatService:
         user_message: str,
     ) -> str:
 
-        conversation = self.conversation_repo.get_by_id(
+        if (
+            self.memory_service.extractor._llm is not None
+            and getattr(self.orchestrator, "llm", None) is not None
+            and self.memory_service.extractor._llm.llm is not self.orchestrator.llm
+        ):
+            self.memory_service.extractor._llm.llm = self.orchestrator.llm
+
+        existing_conversation = self.conversation_repo.get_by_id(
             conversation_id
         )
+        is_new_conversation = (
+            existing_conversation is None
+            or len(self.message_repo.get_for_conversation(existing_conversation.id)) == 0
+        )
 
+        conversation = existing_conversation
         if conversation is None:
             conversation = self.conversation_repo.create(
                 conversation_id=conversation_id,
@@ -48,11 +84,69 @@ class ChatService:
         )
 
         llm_messages = to_llm_messages(messages)
+        if conversation.summary:
+            llm_messages.insert(
+                0,
+                {
+                    "role": "system",
+                    "content": f"Earlier conversation summary:\n{conversation.summary}",
+                },
+            )
+
+        is_self_id = is_self_identity_query(user_message)
+
+        # Profile context is constructed for the initial turn of a new conversation
+        # or whenever the user asks about their profile or personal memories
+        personal_memory_question_starters = (
+            "what do you know",
+            "what do you remember",
+            "tell me about myself",
+            "what have you learned",
+            "who am i",
+            "what is my",
+            "what are my",
+            "what do i",
+            "do i have",
+            "my profile",
+        )
+        is_profile_or_personal_query = (
+            not is_self_id
+            and any(
+                phrase in user_message.lower().strip()
+                for phrase in personal_memory_question_starters
+            )
+        )
+
+        user_profile_context = None
+        user_profile_memories = []
+        if not is_self_id and (is_new_conversation or is_profile_or_personal_query):
+            user_profile_memories = self.memory_service.get_user_profile_memories(user_id)
+            user_profile_context = self.memory_service.build_user_profile(user_id)
+
+        # Per-message relevant memory retrieval (only active, non-superseded memories)
+        memory_context = []
+        if not is_self_id:
+            memory_context = self.memory_service.relevant_context(
+                user_id=user_id,
+                query=user_message,
+            )
+
+        # Context deduplication: do not repeat profile memories in relevant memory context
+        if user_profile_memories:
+            profile_contents = {m.content.strip().lower() for m in user_profile_memories}
+            memory_context = [
+                mem for mem in memory_context
+                if mem.strip().lower() not in profile_contents
+            ]
 
         # Let MAI decide how to handle the request.
         response = self.orchestrator.handle(
             user_message=user_message,
             conversation_messages=llm_messages,
+            memory_context=memory_context,
+            user_id=user_id,
+            user_profile=user_profile_context,
+            conversation_id=conversation.id,
         )
 
         # Store the assistant response.
@@ -61,6 +155,13 @@ class ChatService:
             role="assistant",
             content=response,
         )
+
+        if (
+            len(messages) >= 20
+            and len(messages) % settings.conversation_summary_interval == 0
+        ):
+            summary = self.summarizer.summarize(llm_messages[1:-1])
+            self.conversation_repo.update_summary(conversation, summary)
 
         self.db.commit()
 

@@ -34,3 +34,6 @@ class ConversationRepository:
         self.db.flush()
 
         return conversation
+
+    def update_summary(self, conversation: Conversation, summary: str) -> None:
+        conversation.summary = summary

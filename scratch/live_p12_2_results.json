@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-10-08T06:18:31.500887+00:00",
+  "total": 12,
+  "passed": 12,
+  "failed": 0,
+  "scenarios": {
+    "Scenario_A_Streaming_DateTime": {
+      "status": "PASSED",
+      "transcript": "What time is it in Tokyo?",
+      "response": "The current time in Tokyo is 02:45 AM.",
+      "tts_chunks_count": 3,
+      "latency_metrics": {
+        "time_to_first_partial_ms": 2.43,
+        "total_turn_latency_ms": 63.19,
+        "mai_latency_ms": 0.23,
+        "tts_latency_ms": 60.33
+      }
+    },
+    "Scenario_B_Streaming_Calculator": {
+      "status": "PASSED",
+      "response": "125 * 32 = 4,000."
+    },
+    "Scenario_C_MultiTurn_P8_Continuation": {
+      "status": "PASSED",
+      "turn_2_response": "Comparing Python 3.12.2 with Python 13."
+    },
+    "Scenario_D_P9_Clarification": {
+      "status": "PASSED",
+      "clarification_spoken": "Which page or URL would you like me to read?"
+    },
+    "Scenario_E_P8_Cancellation": {
+      "status": "PASSED",
+      "response": "The active task has been cancelled."
+    },
+    "Scenario_F_StopSpeaking_NoCancel": {
+      "status": "PASSED",
+      "action": "stop_speaking_only",
+      "task_cancelled": false
+    },
+    "Scenario_G_BargeIn_NewUtterance": {
+      "status": "PASSED",
+      "interrupted": true,
+      "new_response": "Python 13 comparison result."
+    },
+    "Scenario_H_Memory_ConfirmationGate": {
+      "status": "PASSED",
+      "prompt": "Do you confirm you want me to remember that you are learning FastAPI?"
+    },
+    "Scenario_I_PromptInjection_Immunity": {
+      "status": "PASSED",
+      "response": "Webpage content verified safely. (Injected commands rejected)."
+    },
+    "Scenario_J_P11_Recovery": {
+      "status": "PASSED",
+      "response": "Recovered release data via alternate mirror: FastAPI 0.110.0."
+    },
+    "Scenario_K_TTSFailure_TextPreserved": {
+      "status": "PASSED",
+      "preserved_text": "Important result text preserved despite TTS failure."
+    },
+    "Scenario_L_STTFailure_NoMAICall": {
+      "status": "PASSED",
+      "mai_called": false
+    }
+  }
+}

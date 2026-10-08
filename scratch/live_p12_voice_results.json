@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-10-07T17:37:27.318434+00:00",
+  "total": 10,
+  "passed": 10,
+  "failed": 0,
+  "scenarios": {
+    "Scenario_A_DateTime": {
+      "status": "PASSED",
+      "transcript": "What time is it in Tokyo?",
+      "text_response": "The current time in Tokyo (Asia/Tokyo) is 02:20 AM.",
+      "spoken": "The current time in Tokyo (Asia/Tokyo) is 02:20 AM.",
+      "has_audio_out": true,
+      "timing_ms": {
+        "stt_latency_ms": 0.03,
+        "mai_latency_ms": 0.12,
+        "tts_latency_ms": 51.76,
+        "total_latency_ms": 56.3
+      }
+    },
+    "Scenario_B_Calculator": {
+      "status": "PASSED",
+      "transcript": "Calculate 125 times 32.",
+      "text_response": "125 * 32 = 4,000.",
+      "spoken": "125 * 32 = 4,000.",
+      "has_audio_out": true
+    },
+    "Scenario_C_MultiTurn_TaskContinuation": {
+      "status": "PASSED",
+      "turn_1_transcript": "Find the latest Python release.",
+      "turn_1_response": "Python 3.12.2 is the latest official release.",
+      "turn_2_transcript": "Compare it with Python thirteen.",
+      "turn_2_response": "Comparing Python 3.12.2 with Python 13 (future major): Python 3.12 is production-ready."
+    },
+    "Scenario_D_VoiceAmbiguity_Clarification": {
+      "status": "PASSED",
+      "transcript": "Read that page.",
+      "clarification_spoken": "Which page or URL would you like me to read?"
+    },
+    "Scenario_E_VoiceCancellation": {
+      "status": "PASSED",
+      "transcript": "Cancel this task.",
+      "response": "The active task has been cancelled."
+    },
+    "Scenario_F_VoiceMemory_ConfirmationGate": {
+      "status": "PASSED",
+      "transcript": "Remember that I am learning FastAPI.",
+      "confirmation_prompt": "I noticed you want me to remember that you are learning FastAPI. Would you like me to save this? (Yes/No)"
+    },
+    "Scenario_G_WebSecurity_PromptInjection": {
+      "status": "PASSED",
+      "spoken": "The document provides an overview of HTTP methods. (Untrusted commands safely ignored)."
+    },
+    "Scenario_H_TTSFailure_TextPreserved": {
+      "status": "PASSED",
+      "text_response": "Crucial answer that must be preserved.",
+      "status_code": "partial_success",
+      "tts_error": "Mock TTS provider is intentionally unavailable."
+    },
+    "Scenario_I_STTFailure_NoMAICall": {
+      "status": "PASSED",
+      "mai_called": false
+    },
+    "Scenario_J_P11_Recovery_TTS": {
+      "status": "PASSED",
+      "recovery_response": "Fetched release notes via alternate fallback mirror: Python 3.12.2 released.",
+      "spoken": "Fetched release notes via alternate fallback mirror: Python 3.12.2 released."
+    }
+  }
+}

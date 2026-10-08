@@ -1,0 +1,81 @@
+{
+  "metadata": {
+    "timestamp": "2026-10-08T06:18:18.211790+00:00",
+    "stt_provider": "whisper (groq)",
+    "has_real_stt_credentials": true,
+    "tts_provider": "mock",
+    "has_real_tts_credentials": false,
+    "canonical_format": {
+      "sample_rate": 16000,
+      "channels": 1,
+      "sample_width": 2,
+      "bytes_per_second": 32000
+    }
+  },
+  "scenarios": {
+    "Scenario_A_DateTime": {
+      "status": "PASSED",
+      "query": "What's the time in Tokyo?",
+      "raw_text": "The current time in Tokyo, Japan is 02:45 AM (JST).",
+      "spoken_text": "The current time in Tokyo, Japan is 02:45 AM (JST).",
+      "tts_chunks_count": 3,
+      "latency": {
+        "time_to_first_partial_ms": 0.86,
+        "total_turn_latency_ms": 63.42,
+        "mai_latency_ms": 0.04,
+        "tts_latency_ms": 62.39
+      }
+    },
+    "Scenario_B_Calculator": {
+      "status": "PASSED",
+      "query": "Calculate 125 times 32.",
+      "raw_text": "125 * 32 = 4,000.",
+      "spoken_text": "125 * 32 = 4,000.",
+      "tts_chunks_count": 3,
+      "latency_ms": 46.95
+    },
+    "Scenario_C_WebSearch": {
+      "status": "PASSED",
+      "raw_text": "According to [python.org](https://www.python.org/downloads/), the latest stable release is Python 3.14.8.",
+      "spoken_text": "According to python.org, the latest stable release is Python 3.14.8.",
+      "grounding_check": "Raw URLs formatted for TTS; raw client text untouched",
+      "latency_ms": 45.77
+    },
+    "Scenario_D_MultiTurn": {
+      "status": "PASSED",
+      "turn_1": "Python 3.14.8 is the latest stable version.",
+      "turn_2": "Python 3.14 includes significant performance improvements over Python 3.13.",
+      "call_count": 2,
+      "latency_ms": 124.66
+    },
+    "Scenario_E_Clarification": {
+      "status": "PASSED",
+      "raw_clarification": "ClarificationReason.MISSING_ARGUMENT: page_url.",
+      "spoken_clarification": "Which page would you like me to read?",
+      "latency_ms": 61.42
+    },
+    "Scenario_F_Memory": {
+      "status": "PASSED",
+      "confirmation_prompt": "Would you like me to remember that you are learning FastAPI? Please confirm with yes or no.",
+      "partial_invocations": 0,
+      "final_invocations": 1,
+      "latency_ms": 60.72
+    },
+    "Scenario_G_BargeIn": {
+      "status": "PASSED",
+      "interrupted": true,
+      "new_response": "Python 13 comparison result.",
+      "interruption_latency_ms": 0.11
+    },
+    "Scenario_H_StopSpeaking": {
+      "status": "PASSED",
+      "action": "stop_speaking_only",
+      "task_cancelled": false
+    },
+    "Scenario_I_TaskCancellation": {
+      "status": "PASSED",
+      "chat_called": true,
+      "response": "Task cancelled successfully."
+    }
+  }
+}

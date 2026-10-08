@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "timestamp": "2026-10-08T06:16:52.720802+00:00",
+    "mode": "local_offline",
+    "stt_provider": "local_whisper_tiny",
+    "tts_provider": "local_pyttsx3",
+    "canonical_format": {
+      "sample_rate": 16000,
+      "channels": 1,
+      "sample_width": 2
+    }
+  },
+  "benchmarks": {},
+  "scenarios": {
+    "Scenario_A_LocalTurn": {
+      "status": "PASSED",
+      "transcript": "What time is it in Tokyo?",
+      "response": "The current time in Tokyo, Japan is 02:45 AM (JST).",
+      "tts_chunks_count": 11,
+      "latency": {
+        "mic_start_to_audio_start_ms": 0.09,
+        "chunk_ingestion_latency_ms": 30018.36,
+        "stt_finalization_latency_ms": 897.24,
+        "mai_reasoning_latency_ms": 0.09,
+        "tts_synthesis_latency_ms": 404.98,
+        "total_turn_latency_ms": 30915.69
+      }
+    },
+    "Scenario_B_LocalBargeIn": {
+      "status": "PASSED",
+      "barge_in_latency_ms": 0.14,
+      "status_after_interrupt": "LISTENING"
+    },
+    "Scenario_C_StopSpeaking": {
+      "status": "PASSED",
+      "action": "stop_speaking_only",
+      "task_cancelled": false
+    },
+    "Scenario_D_TaskCancellation": {
+      "status": "PASSED",
+      "chat_called": true,
+      "response": "Task cancelled successfully."
+    }
+  }
+}

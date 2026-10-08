@@ -3,3 +3,5 @@ env/
 __pycache__/
 *.pyc
 .pytest_cache/
+.venv/
+DOCS/api_key.txt
