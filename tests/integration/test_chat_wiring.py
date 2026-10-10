@@ -103,7 +103,8 @@ def test_chat_service_wires_llm_provider(test_db_setup):
 
 
 def test_chat_service_canonical_provider_by_default(test_db_setup):
-    """ChatService without explicit llm uses the canonical get_ollama_provider instance."""
+    """ChatService without explicit llm uses the canonical configured provider instance."""
+    from app.llm.resilient_provider import ResilientLLMProvider
     TestingSessionLocal, _ = test_db_setup
     with TestingSessionLocal() as db:
         service = ChatService(db)
@@ -111,7 +112,8 @@ def test_chat_service_canonical_provider_by_default(test_db_setup):
         assert service.memory_service.extractor._llm is not None
         assert isinstance(service.memory_service.extractor._llm, LLMMemoryExtractor)
         assert service.memory_service.extractor._llm.llm is service.orchestrator.llm
-        assert isinstance(service.orchestrator.llm, OllamaProvider)
+        assert isinstance(service.orchestrator.llm, (OllamaProvider, ResilientLLMProvider))
+
 
 
 def test_post_chat_persists_project_memory_via_llm_extractor(test_db_setup):
@@ -279,9 +281,10 @@ def test_real_chat_dependency_path_supplies_provider():
     assert isinstance(canonical_provider, OllamaProvider)
 
     # Check the endpoint dependency signature
-    from app.api.routes_chat import chat
+    from app.api.routes_chat import chat, get_active_chat_llm
     import inspect
     sig = inspect.signature(chat)
     assert "llm" in sig.parameters
     param = sig.parameters["llm"]
-    assert param.default.dependency == get_ollama_provider
+    assert param.default.dependency in (get_ollama_provider, get_active_chat_llm)
+

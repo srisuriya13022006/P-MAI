@@ -1,0 +1,71 @@
+[
+  {
+    "turn_label": "What is your name?",
+    "transcript": "What is your name?",
+    "response": "I'm MAI, your multipurpose AI assistant.",
+    "llm_provider": "groq",
+    "llm_calls": 0,
+    "stt_latency_ms": 1703.27,
+    "mai_latency_ms": 318.52,
+    "tts_latency_ms": 1131.77,
+    "audio_stream_ms": 561.035400009132,
+    "turnaround_from_audio_end_ms": 5494.883999999729,
+    "total_wall_clock_ms": 6055.919400008861,
+    "server_timings": {
+      "t_server_recv_audio_end": 86030.971674,
+      "t_stt_start": 86030.972097,
+      "t_stt_end": 86032.6753699,
+      "t_agent_start": 86032.6761378,
+      "t_agent_end": 86032.9946586,
+      "t_tts_start": 86032.9946798,
+      "t_first_tts_chunk": 86034.1105852,
+      "t_tts_end": 86034.1264453
+    }
+  },
+  {
+    "turn_label": "What time is it?",
+    "transcript": "What time is it?",
+    "response": "The current time is 19:17:39 (Asia/Kolkata).",
+    "llm_provider": "groq",
+    "llm_calls": 0,
+    "stt_latency_ms": 1708.21,
+    "mai_latency_ms": 28.1,
+    "tts_latency_ms": 400.38,
+    "audio_stream_ms": 561.4670000068145,
+    "turnaround_from_audio_end_ms": 3128.5884999961127,
+    "total_wall_clock_ms": 3690.055500002927,
+    "server_timings": {
+      "t_server_recv_audio_end": 86035.6843167,
+      "t_stt_start": 86035.6849068,
+      "t_stt_end": 86037.393113,
+      "t_agent_start": 86037.3935827,
+      "t_agent_end": 86037.42168,
+      "t_tts_start": 86037.4216983,
+      "t_first_tts_chunk": 86037.8046809,
+      "t_tts_end": 86037.8220804
+    }
+  },
+  {
+    "turn_label": "What is 25 times 47?",
+    "transcript": "What is 25 times 47?",
+    "response": "The calculation result is 1175.",
+    "llm_provider": "groq",
+    "llm_calls": 0,
+    "stt_latency_ms": 1606.56,
+    "mai_latency_ms": 22.43,
+    "tts_latency_ms": 348.02,
+    "audio_stream_ms": 1025.6489000021247,
+    "turnaround_from_audio_end_ms": 2602.789800002938,
+    "total_wall_clock_ms": 3628.438700005063,
+    "server_timings": {
+      "t_server_recv_audio_end": 86039.4725545,
+      "t_stt_start": 86039.4730855,
+      "t_stt_end": 86041.0796434,
+      "t_agent_start": 86041.080768,
+      "t_agent_end": 86041.1031961,
+      "t_tts_start": 86041.1032219,
+      "t_first_tts_chunk": 86041.4363381,
+      "t_tts_end": 86041.4512453
+    }
+  }
+]

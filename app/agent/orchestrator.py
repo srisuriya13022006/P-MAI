@@ -1,10 +1,24 @@
 import re
 
 from app.agent.permissions import PermissionManager
-from app.agent.policy import apply_policy, is_self_identity_query
+from app.agent.policy import (
+    apply_policy,
+    is_self_identity_query,
+    is_pure_datetime_query,
+    is_greeting_query,
+    is_acknowledgment_query,
+    is_farewell_query,
+    is_pure_calculator_query,
+)
+from app.agent.tool_argument_resolver import (
+    resolve_datetime_arguments,
+    resolve_calculator_arguments,
+)
 from app.agent.router import RequestAnalyzer
 from app.schemas.agent import AgentDecision
 from app.core.config import settings
+from app.llm.base import LLMProvider
+from app.llm.factory import get_llm_provider
 from app.llm.groq_provider import GroqProvider
 from app.llm.ollama_provider import OllamaProvider, get_ollama_provider
 from app.prompts.conversation import MAI_SYSTEM_PROMPT
@@ -74,12 +88,12 @@ class MAIOrchestrator:
     def __init__(
         self,
         memory_service: MemoryService | None = None,
-        llm: OllamaProvider | None = None,
+        llm: LLMProvider | OllamaProvider | None = None,
         task_state_manager: TaskStateManager | None = None,
         replanner: ControlledReplanner | None = None,
     ):
-        self.router = RequestAnalyzer()
-        self.llm = llm if llm is not None else get_ollama_provider()
+        self.llm = llm if llm is not None else get_llm_provider()
+        self.router = RequestAnalyzer(llm=self.llm)
         self.cloud_llm = self._build_cloud_provider()
         self.permission_manager = PermissionManager()
         self.tool_registry = ToolRegistry()
@@ -145,6 +159,26 @@ class MAIOrchestrator:
             active_task = self.task_state_manager.get_active_task(u_id, conv_id)
             if not active_task:
                 return "There is no active task to continue. What would you like me to help you with?"
+
+        # 2b. Check for repetition / "read it again" command
+        repeat_patterns = (
+            r"^(?:please\s+)?(?:read|repeat|say)(?:\s+(?:it|that|this))?(?:\s+again)?[.!?]?$",
+            r"^(?:can\s+you\s+)?(?:read|repeat|say)(?:\s+(?:it|that|this))?(?:\s+again)?[.!?]?$",
+            r"^what\s+did\s+you\s+(?:just\s+)?say[.!?]?$",
+            r"^repeat(?:\s+the\s+last\s+(?:answer|response|result))?[.!?]?$",
+        )
+        if any(bool(re.match(p, user_message.strip(), re.IGNORECASE)) for p in repeat_patterns):
+            active_task = self.task_state_manager.get_active_task(u_id, conv_id)
+            last_assistant_msg = next(
+                (m["content"] for m in reversed(conversation_messages) if m.get("role") == "assistant"),
+                None,
+            )
+            if not last_assistant_msg and active_task:
+                last_assistant_msg = active_task.context_values.get("last_answer") or (
+                    active_task.completed_steps[-1].output_text if active_task.completed_steps else None
+                )
+            if last_assistant_msg:
+                return last_assistant_msg
 
         # 3. Retrieve active task state
         active_task = self.task_state_manager.get_active_task(u_id, conv_id)
@@ -313,6 +347,51 @@ class MAIOrchestrator:
                 tool_arguments={},
                 reason="Conversational self-identity query answered locally without tools or memory.",
             )
+        elif is_pure_datetime_query(effective_message):
+            decision = AgentDecision(
+                intent="datetime",
+                route="tool",
+                needs_clarification=False,
+                tools=["datetime"],
+                tool_arguments=resolve_datetime_arguments(effective_message),
+                reason="Current date and time requests are handled by the datetime tool.",
+            )
+        elif is_pure_calculator_query(effective_message):
+            decision = AgentDecision(
+                intent="arithmetic",
+                route="tool",
+                needs_clarification=False,
+                tools=["calculator"],
+                tool_arguments=resolve_calculator_arguments(effective_message),
+                reason="Arithmetic requests are handled by the calculator tool.",
+            )
+        elif is_farewell_query(effective_message):
+            decision = AgentDecision(
+                intent="farewell",
+                route="local",
+                needs_clarification=False,
+                tools=[],
+                tool_arguments={},
+                reason="Conversational farewell.",
+            )
+        elif is_greeting_query(effective_message):
+            decision = AgentDecision(
+                intent="greet",
+                route="local",
+                needs_clarification=False,
+                tools=[],
+                tool_arguments={},
+                reason="Conversational greeting routed locally.",
+            )
+        elif is_acknowledgment_query(effective_message):
+            decision = AgentDecision(
+                intent="acknowledge",
+                route="local",
+                needs_clarification=False,
+                tools=[],
+                tool_arguments={},
+                reason="Conversational acknowledgment routed locally.",
+            )
         else:
             decision = self.router.analyze(effective_message)
 
@@ -335,9 +414,23 @@ class MAIOrchestrator:
             if is_self_identity_query(effective_message):
                 return self._handle_self_identity_response(effective_message)
 
+            if getattr(decision, "intent", None) == "farewell" or is_farewell_query(effective_message):
+                return self._handle_farewell_response(effective_message)
+
             # Check if this conversational message contains personal facts requiring explicit confirmation
+            # Only extract if message contains personal markers and is not casual greeting/acknowledgment/farewell
             mem_svc = getattr(self, "memory_service", None)
-            if mem_svc and hasattr(mem_svc, "extractor"):
+            is_casual_conversation = (
+                is_greeting_query(effective_message)
+                or is_acknowledgment_query(effective_message)
+                or getattr(decision, "intent", None) in ("greet", "acknowledge", "farewell")
+            )
+            has_personal_markers = bool(
+                re.search(r"\b(?:i|i'm|my|me|mine|we|our|myself)\b", effective_message.lower())
+                or "remember" in effective_message.lower()
+            )
+
+            if mem_svc and hasattr(mem_svc, "extractor") and not is_casual_conversation and has_personal_markers:
                 is_question = bool(
                     effective_message.strip().endswith("?")
                     or re.match(r"^(?:what|who|where|when|why|how|do\s+you|can\s+you|is\s+my|are\s+my|tell\s+me\s+about\s+(?:myself|me))\b", effective_message.strip(), re.IGNORECASE)
@@ -359,17 +452,34 @@ class MAIOrchestrator:
                         active_task.transition_to(TaskLifecycleStatus.WAITING_FOR_USER)
                         return "Would you like me to remember that?"
 
+            # Conversational generation with sensible output token limits
+            max_tok = 150 if is_casual_conversation else (300 if len(effective_message.split()) < 18 else 800)
             try:
-                return self.llm.generate(
-                    conversation_messages,
-                    system_prompt=self._system_prompt(memory_context, user_profile),
-                )
-            except Exception:
-                if settings.use_cloud_fallback and self.cloud_llm is not None:
-                    return self.cloud_llm.generate(
+                try:
+                    return self.llm.generate(
+                        conversation_messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="conversation",
+                        max_tokens=max_tok,
+                    )
+                except TypeError:
+                    return self.llm.generate(
                         conversation_messages,
                         system_prompt=self._system_prompt(memory_context, user_profile),
                     )
+            except Exception:
+                if settings.use_cloud_fallback and self.cloud_llm is not None:
+                    try:
+                        return self.cloud_llm.generate(
+                            conversation_messages,
+                            system_prompt=self._system_prompt(memory_context, user_profile),
+                            max_tokens=max_tok,
+                        )
+                    except TypeError:
+                        return self.cloud_llm.generate(
+                            conversation_messages,
+                            system_prompt=self._system_prompt(memory_context, user_profile),
+                        )
                 raise
 
         if decision.route == "tool":
@@ -446,12 +556,19 @@ class MAIOrchestrator:
                 "and executing multi-step tasks."
             )
 
-        # Check AI query
-        if any(w in lowered for w in ("are you an ai", "are you ai", "are you a robot", "are you human")):
+        # Check AI / identity query
+        if any(w in lowered for w in ("are you an ai", "are you ai", "are you a robot", "are you human", "are you mai", "is this mai")):
             return f"{prefix}Yes, I'm MAI, your multipurpose AI assistant."
 
         # Default self-identity response (name, who are you, describe yourself)
         return f"{prefix}I'm MAI, your multipurpose AI assistant."
+
+    def _handle_farewell_response(self, user_message: str) -> str:
+        """
+        Fast-path deterministic response for user farewells (e.g. Goodbye, Bye).
+        Minimizes latency and token consumption while providing a friendly conclusion.
+        """
+        return "Goodbye! Have a great day!"
 
     def _should_use_cloud_model(self, user_message: str, decision) -> bool:
         if not self.cloud_llm:
@@ -490,20 +607,36 @@ class MAIOrchestrator:
         memory_context: list[str] | None,
         user_profile: str | None = None,
     ) -> str:
+        max_tok = 800 if self._should_use_cloud_model(user_message, decision) else 300
         if self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
             try:
-                return self.cloud_llm.generate(
-                    messages,
-                    system_prompt=self._system_prompt(memory_context, user_profile),
-                )
+                try:
+                    return self.cloud_llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        max_tokens=max_tok,
+                    )
+                except TypeError:
+                    return self.cloud_llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
             except Exception as e:
                 print(f"Cloud LLM generation failed ({e}), falling back to local model.")
 
         if self.llm:
-            return self.llm.generate(
-                messages,
-                system_prompt=self._system_prompt(memory_context, user_profile),
-            )
+            try:
+                return self.llm.generate(
+                    messages,
+                    system_prompt=self._system_prompt(memory_context, user_profile),
+                    stage="conversation",
+                    max_tokens=max_tok,
+                )
+            except TypeError:
+                return self.llm.generate(
+                    messages,
+                    system_prompt=self._system_prompt(memory_context, user_profile),
+                )
         return "I could not generate a response at this time."
 
     def _system_prompt(
@@ -537,6 +670,7 @@ class MAIOrchestrator:
         memory_context: list[str] | None = None,
         user_profile: str | None = None,
     ) -> str:
+        bounded_evidence = tool_output[:2500] if len(tool_output) > 2500 else tool_output
         synthesis_prompt = (
             "You are MAI, answering the user's request based on real-time web search results.\n\n"
             "SECURITY & EVIDENCE NOTICE:\n"
@@ -552,18 +686,28 @@ class MAIOrchestrator:
             "5. Do not cite a source for a claim that source does not support.\n"
             "6. Avoid a generic disconnected link dump at the end; prefer inline citations on specific claims.\n\n"
             f"User request: {user_message}\n\n"
-            f"<search_evidence>\n{tool_output}\n</search_evidence>"
+            f"<search_evidence>\n{bounded_evidence}\n</search_evidence>"
         )
-        messages = list(conversation_messages)
+        # Cap conversation history to recent turns (last 4) to avoid token inflation
+        history = conversation_messages[-4:] if len(conversation_messages) > 4 else conversation_messages
+        messages = list(history)
         messages.append({"role": "user", "content": synthesis_prompt})
 
         # 1. Attempt Cloud LLM if available and suitable
         if self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
             try:
-                response = self.cloud_llm.generate(
-                    messages,
-                    system_prompt=self._system_prompt(memory_context, user_profile),
-                )
+                try:
+                    response = self.cloud_llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="synthesis",
+                        max_tokens=350,
+                    )
+                except TypeError:
+                    response = self.cloud_llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
                 if response and response.strip():
                     return enforce_grounding(response.strip(), tool_output, user_query=user_message)
             except Exception as e:
@@ -572,10 +716,18 @@ class MAIOrchestrator:
         # 2. Local LLM synthesis fallback
         if self.llm:
             try:
-                response = self.llm.generate(
-                    messages,
-                    system_prompt=self._system_prompt(memory_context, user_profile),
-                )
+                try:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="synthesis",
+                        max_tokens=350,
+                    )
+                except TypeError:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
                 if response and response.strip():
                     return enforce_grounding(response.strip(), tool_output, user_query=user_message)
             except Exception as e:
@@ -610,16 +762,26 @@ class MAIOrchestrator:
             f"User request: {user_message}\n\n"
             f"{tool_output}"
         )
-        messages = list(conversation_messages)
+        # Cap conversation history to recent turns (last 4) to avoid token inflation
+        history = conversation_messages[-4:] if len(conversation_messages) > 4 else conversation_messages
+        messages = list(history)
         messages.append({"role": "user", "content": synthesis_prompt})
 
         # 1. Attempt Cloud LLM if available and suitable
         if self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
             try:
-                response = self.cloud_llm.generate(
-                    messages,
-                    system_prompt=self._system_prompt(memory_context, user_profile),
-                )
+                try:
+                    response = self.cloud_llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="synthesis",
+                        max_tokens=600,
+                    )
+                except TypeError:
+                    response = self.cloud_llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
                 if response and response.strip():
                     return enforce_grounding(response.strip(), tool_output, user_query=user_message)
             except Exception as e:
@@ -628,10 +790,18 @@ class MAIOrchestrator:
         # 2. Local LLM synthesis fallback
         if self.llm:
             try:
-                response = self.llm.generate(
-                    messages,
-                    system_prompt=self._system_prompt(memory_context, user_profile),
-                )
+                try:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="synthesis",
+                        max_tokens=600,
+                    )
+                except TypeError:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
                 if response and response.strip():
                     return enforce_grounding(response.strip(), tool_output, user_query=user_message)
             except Exception as e:

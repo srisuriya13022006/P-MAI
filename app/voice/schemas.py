@@ -28,6 +28,8 @@ class STTResult:
     duration_seconds: float | None = None
     provider: str = "mock"
     confidence: float | None = 1.0
+    is_final: bool = True
+    is_partial: bool = False
 
 
 @dataclass
@@ -41,12 +43,15 @@ class TTSResult:
 
 
 class VoiceTimingMetadata(BaseModel):
-    """Execution timing metadata for observability (never exposes internal agent IDs)."""
+    """Execution timing metadata for observability (never exposes internal agent IDs or secrets)."""
 
     stt_latency_ms: float = Field(default=0.0, description="Latency of speech-to-text transcription")
     mai_latency_ms: float = Field(default=0.0, description="Latency of MAI brain processing and reasoning")
     tts_latency_ms: float = Field(default=0.0, description="Latency of text-to-speech synthesis")
     total_latency_ms: float = Field(default=0.0, description="End-to-end voice turnaround time")
+    stt_provider: str = Field(default="assemblyai", description="Active speech-to-text provider")
+    llm_provider: str = Field(default="groq", description="Active LLM reasoning provider")
+    runtime_mode: str = Field(default="FULL_CLOUD", description="Runtime tier mode: FULL_CLOUD, DEGRADED, OFFLINE")
 
 
 class VoiceChatRequest(BaseModel):

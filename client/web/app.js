@@ -110,6 +110,7 @@ class PMAIWebVoiceClient {
     this.elStateBadge = document.getElementById("state-badge");
     this.elStateText = document.getElementById("state-text");
     this.elPulseIndicator = document.getElementById("pulse-indicator");
+    this.elArcReactor = document.getElementById("arc-reactor-core");
 
     this.elConnText = document.getElementById("conn-text");
     this.elConnDot = document.getElementById("conn-dot");
@@ -157,13 +158,24 @@ class PMAIWebVoiceClient {
     const label = customMsg || info.label;
 
     if (this.elStateText) {
-      this.elStateText.textContent = label;
+      this.elStateText.textContent = label.toUpperCase();
     }
 
     if (this.elPulseIndicator) {
       this.elPulseIndicator.style.background = info.color;
       this.elPulseIndicator.style.boxShadow =
-        `0 0 10px ${info.color}`;
+        `0 0 14px ${info.color}`;
+    }
+
+    if (this.elArcReactor) {
+      this.elArcReactor.className = "arc-reactor-wrapper";
+      if (stateName === "LISTENING") {
+        this.elArcReactor.classList.add("state-listening");
+      } else if (stateName === "PROCESSING" || stateName === "TRANSCRIBING") {
+        this.elArcReactor.classList.add("state-thinking");
+      } else if (stateName === "SPEAKING") {
+        this.elArcReactor.classList.add("state-speaking");
+      }
     }
 
     if (this.elBtnSpeak) {
@@ -173,8 +185,8 @@ class PMAIWebVoiceClient {
       );
 
       this.elBtnSpeak.innerHTML = this.isRecording
-        ? "🔴 Stop Speaking"
-        : "🎙 Speak";
+        ? '<span class="btn-icon">🔴</span><span class="btn-text">DISENGAGE</span>'
+        : '<span class="btn-icon">🎙</span><span class="btn-text">ENGAGE VOICE</span>';
     }
 
     if (this.elErrorBanner) {
@@ -191,17 +203,17 @@ class PMAIWebVoiceClient {
   setConnectionStatus(connected, text) {
     if (this.elConnDot) {
       this.elConnDot.style.background = connected
-        ? "#10b981"
-        : "#ef4444";
+        ? "#00ff88"
+        : "#ff0055";
 
       this.elConnDot.style.boxShadow =
-        `0 0 8px ${
-          connected ? "#10b981" : "#ef4444"
+        `0 0 10px ${
+          connected ? "#00ff88" : "#ff0055"
         }`;
     }
 
     if (this.elConnText) {
-      this.elConnText.textContent = text;
+      this.elConnText.textContent = text.toUpperCase();
     }
   }
 
@@ -1660,89 +1672,54 @@ class PMAIWebVoiceClient {
           this.isPlayingAudio
         )
       ) {
-        const bufferLength =
-          this.analyserNode
-            .frequencyBinCount;
+        const bufferLength = this.analyserNode.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        this.analyserNode.getByteFrequencyData(dataArray);
 
-        const dataArray =
-          new Uint8Array(
-            bufferLength
-          );
+        const bars = 36;
+        const barWidth = (width / bars) - 3;
+        const step = Math.floor(bufferLength / bars);
 
-        this.analyserNode
-          .getByteFrequencyData(
-            dataArray
-          );
+        for (let i = 0; i < bars; i++) {
+          const val = dataArray[i * step] || 0;
+          const barHeight = Math.max(4, (val / 255) * (height - 12));
+          const x = i * (barWidth + 3) + 2;
+          const y = (height - barHeight) / 2;
 
-        const barWidth =
-          (width / bufferLength) *
-          2.5;
+          // Glowing cyan cyber bar
+          const grad = this.canvasCtx.createLinearGradient(0, y, 0, y + barHeight);
+          grad.addColorStop(0, "#00f0ff");
+          grad.addColorStop(0.5, "#ffffff");
+          grad.addColorStop(1, "#0066ff");
 
-        let x = 0;
+          this.canvasCtx.shadowBlur = 8;
+          this.canvasCtx.shadowColor = "#00f0ff";
+          this.canvasCtx.fillStyle = grad;
+          this.canvasCtx.fillRect(x, y, barWidth, barHeight);
 
-        /*
-         * Create gradient once per frame.
-         */
-        const gradient =
-          this.canvasCtx.createLinearGradient(
-            0,
-            height,
-            0,
-            0
-          );
-
-        gradient.addColorStop(
-          0,
-          "#06b6d4"
-        );
-
-        gradient.addColorStop(
-          1,
-          "#8b5cf6"
-        );
-
-        this.canvasCtx.fillStyle =
-          gradient;
-
-        for (
-          let i = 0;
-          i < bufferLength;
-          i++
-        ) {
-          const barHeight =
-            (dataArray[i] / 255) *
-            height;
-
-          this.canvasCtx.fillRect(
-            x,
-            height - barHeight,
-            barWidth,
-            barHeight
-          );
-
-          x +=
-            barWidth + 1;
+          // Top and bottom peak dots
+          this.canvasCtx.fillStyle = "#ffffff";
+          this.canvasCtx.fillRect(x, y - 2, barWidth, 1.5);
+          this.canvasCtx.fillRect(x, y + barHeight + 0.5, barWidth, 1.5);
         }
+        this.canvasCtx.shadowBlur = 0;
       } else {
-        // Idle ambient line.
+        // High-tech idle scanline with center diamond
+        const midY = height / 2;
         this.canvasCtx.beginPath();
-
-        this.canvasCtx.moveTo(
-          0,
-          height / 2
-        );
-
-        this.canvasCtx.lineTo(
-          width,
-          height / 2
-        );
-
-        this.canvasCtx.strokeStyle =
-          "rgba(255, 255, 255, 0.1)";
-
-        this.canvasCtx.lineWidth = 1;
-
+        this.canvasCtx.moveTo(10, midY);
+        this.canvasCtx.lineTo(width - 10, midY);
+        this.canvasCtx.strokeStyle = "rgba(0, 240, 255, 0.25)";
+        this.canvasCtx.lineWidth = 1.5;
         this.canvasCtx.stroke();
+
+        // Ambient cyber center reticle
+        const cx = width / 2;
+        this.canvasCtx.strokeStyle = "rgba(0, 240, 255, 0.6)";
+        this.canvasCtx.strokeRect(cx - 15, midY - 6, 30, 12);
+
+        this.canvasCtx.fillStyle = "rgba(0, 240, 255, 0.8)";
+        this.canvasCtx.fillRect(cx - 2, midY - 2, 4, 4);
       }
     };
 

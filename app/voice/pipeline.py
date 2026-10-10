@@ -255,11 +255,37 @@ class VoicePipeline:
         tts_latency_ms = round((time.perf_counter() - tts_start) * 1000.0, 2)
         total_latency_ms = round((time.perf_counter() - total_start) * 1000.0, 2)
 
+        from app.core.runtime_mode import determine_runtime_mode
+        stt_raw = getattr(self.stt_provider, "provider_name", "assemblyai")
+        stt_prov_name = stt_raw if isinstance(stt_raw, str) else str(stt_raw)
+        stt_mode_raw = getattr(
+            self.stt_provider,
+            "stt_mode",
+            "CLOUD" if stt_prov_name in ("assemblyai", "whisper", "groq", "openai") else "LOCAL_FALLBACK",
+        )
+        stt_mode = stt_mode_raw if isinstance(stt_mode_raw, str) else "CLOUD"
+
+        orch = getattr(self.chat_service, "orchestrator", self.orchestrator)
+        llm_obj = getattr(orch, "llm", None)
+        llm_raw = getattr(llm_obj, "provider_name", "groq")
+        llm_prov_name = llm_raw if isinstance(llm_raw, str) else str(llm_raw)
+        llm_mode_raw = getattr(
+            llm_obj,
+            "runtime_mode",
+            "CLOUD" if getattr(llm_obj, "provider_type", "cloud") == "cloud" else "LOCAL_FALLBACK",
+        )
+        llm_mode = llm_mode_raw if isinstance(llm_mode_raw, str) else "CLOUD"
+        mode = determine_runtime_mode(stt_mode, llm_mode).value
+
+
         timing = VoiceTimingMetadata(
             stt_latency_ms=stt_latency_ms,
             mai_latency_ms=mai_latency_ms,
             tts_latency_ms=tts_latency_ms,
             total_latency_ms=total_latency_ms,
+            stt_provider=stt_prov_name,
+            llm_provider=llm_prov_name,
+            runtime_mode=mode,
         )
 
         return VoiceChatResponse(

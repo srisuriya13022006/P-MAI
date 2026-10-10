@@ -1,0 +1,42 @@
+             MAI
+              │
+      ┌───────┴────────┐
+      │                │
+   PRIMARY          FALLBACK
+      │                │
+AssemblyAI          Whisper
+Cloud LLM           Qwen
+      │                │
+      └───────┬────────┘
+              │
+       Local Agent Core
+              │
+   ┌──────────┼──────────┐
+   │          │          │
+Memory      Tools      Tasks
+   │          │          │
+   └──────────┼──────────┘
+              │
+        Grounding/Safety
+              │
+          Local TTS
+
+
+
+| MAI component | Recommended |
+|---|---|
+| Realtime STT | **AssemblyAI primary** |
+| STT offline fallback | **Local Whisper** |
+| Main conversation LLM | **Cloud LLM** |
+| Planning | **Cloud LLM + deterministic validator** |
+| Tool selection | **Cloud LLM + your existing capability scorer** |
+| Replanning | **Cloud LLM + bounded validator** |
+| Web search | Existing web subsystem |
+| Calculator | Local deterministic |
+| Date/time | Local deterministic |
+| Memory DB | **Local PostgreSQL** |
+| Memory retrieval | Local |
+| Memory authorization | **Local deterministic gate** |
+| TTS | **Local pyttsx3** |
+| Agent state | Local |
+| Grounding/security | Local deterministic enforcement |

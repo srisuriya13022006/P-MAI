@@ -1,0 +1,17 @@
+{
+  "stage_benchmarks": {
+    "tool_latency_ms": 3332.446800006437,
+    "orch_latency_ms": 6847.980799997458,
+    "cloud_synth_approx_ms": 3515.533999991021,
+    "formatting_ms": 1.7385999963153154,
+    "tts_ms": 1589.603200001875
+  },
+  "websocket_run": {
+    "stt_ms": 1809.51,
+    "mai_ms": 3685.92,
+    "tts_ms": 1934.73,
+    "turnaround_from_audio_end_ms": 9427.069900004426,
+    "total_wall_clock_ms": 10305.930799993803,
+    "llm_provider": "groq"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "physical_mic_active": true,
+  "chunks_sent": 33,
+  "transcript": "",
+  "response": "",
+  "audio_chunks_received": 0,
+  "stt_latency_ms": null,
+  "mai_latency_ms": null,
+  "tts_latency_ms": null,
+  "total_wall_clock_s": 14.0
+}

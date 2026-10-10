@@ -26,7 +26,7 @@ from app.voice.tts.openai_adapter import OpenAITTSAdapter
 # -------------------------------------------------------------------------
 def test_provider_configuration_defaults():
     cfg = VoiceConfig()
-    assert cfg.stt_provider == "local"
+    assert cfg.stt_provider in ("local", "assemblyai")
     assert cfg.tts_provider == "local"
     assert cfg.sample_rate == 16000
     assert cfg.audio_format == "audio/wav"

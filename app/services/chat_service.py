@@ -1,12 +1,20 @@
 from sqlalchemy.orm import Session
 
-from app.agent.policy import is_self_identity_query
+from app.agent.policy import (
+    is_self_identity_query,
+    is_pure_datetime_query,
+    is_greeting_query,
+    is_acknowledgment_query,
+    is_farewell_query,
+    is_pure_calculator_query,
+)
 from app.agent.orchestrator import MAIOrchestrator
 from app.core.config import settings
 from app.agent.task_state import TaskStateManager
 from app.database.repositories.conversations import ConversationRepository
 from app.database.repositories.messages import MessageRepository
 from app.database.repositories.memories import MemoryRepository
+from app.llm.factory import get_llm_provider
 from app.llm.ollama_provider import get_ollama_provider
 from app.memory.llm_extractor import LLMExtractionProvider
 from app.memory.service import MemoryService
@@ -27,7 +35,7 @@ class ChatService:
     ):
         self.db = db
 
-        provider = llm if llm is not None else get_ollama_provider()
+        provider = llm if llm is not None else get_llm_provider()
 
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
@@ -94,6 +102,10 @@ class ChatService:
             )
 
         is_self_id = is_self_identity_query(user_message)
+        is_dt_query = is_pure_datetime_query(user_message)
+        is_calc_query = is_pure_calculator_query(user_message)
+        is_farewell = is_farewell_query(user_message)
+        is_casual = is_greeting_query(user_message) or is_acknowledgment_query(user_message)
 
         # Profile context is constructed for the initial turn of a new conversation
         # or whenever the user asks about their profile or personal memories
@@ -111,6 +123,7 @@ class ChatService:
         )
         is_profile_or_personal_query = (
             not is_self_id
+            and not is_dt_query
             and any(
                 phrase in user_message.lower().strip()
                 for phrase in personal_memory_question_starters
@@ -119,13 +132,15 @@ class ChatService:
 
         user_profile_context = None
         user_profile_memories = []
-        if not is_self_id and (is_new_conversation or is_profile_or_personal_query):
+
+        if not is_self_id and not is_dt_query and (is_new_conversation or is_profile_or_personal_query):
             user_profile_memories = self.memory_service.get_user_profile_memories(user_id)
             user_profile_context = self.memory_service.build_user_profile(user_id)
 
         # Per-message relevant memory retrieval (only active, non-superseded memories)
         memory_context = []
-        if not is_self_id:
+        skip_relevant_memory = is_self_id or is_dt_query or is_calc_query or is_farewell or is_casual
+        if not skip_relevant_memory:
             memory_context = self.memory_service.relevant_context(
                 user_id=user_id,
                 query=user_message,
@@ -138,6 +153,10 @@ class ChatService:
                 mem for mem in memory_context
                 if mem.strip().lower() not in profile_contents
             ]
+
+        # Reset turn accounting on resilient LLM provider if supported
+        if hasattr(self.orchestrator.llm, "reset_turn_accounting"):
+            self.orchestrator.llm.reset_turn_accounting()
 
         # Let MAI decide how to handle the request.
         response = self.orchestrator.handle(

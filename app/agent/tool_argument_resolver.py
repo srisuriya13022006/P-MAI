@@ -38,14 +38,18 @@ def resolve_datetime_arguments(
     args = dict(existing_arguments or {})
     lowered = user_message.lower().strip()
 
-    # 1. Location extraction if not already set
-    if not args.get("location") and not args.get("timezone"):
-        loc_match = re.search(
-            r"\bin\s+([a-z][a-z\s\-]+?)(?:\?|\.|!|$)",
-            lowered,
-        )
-        if loc_match:
-            args["location"] = loc_match.group(1).strip().title()
+    # 1. Location extraction
+    loc_match = re.search(
+        r"\b(?:in|for|at)\s+([a-z][a-z\s\-]+?)(?:\?|\.|!|$)",
+        lowered,
+    )
+    if loc_match:
+        args["location"] = loc_match.group(1).strip().title()
+        args.pop("timezone", None)
+    elif not re.search(r"\b(?:in|for|at)\b", lowered):
+        # If the user did not specify a location, purge any hallucinated or inherited location
+        args.pop("location", None)
+        args.pop("timezone", None)
 
     # 2. Relative day extraction
     if "tomorrow" in lowered:

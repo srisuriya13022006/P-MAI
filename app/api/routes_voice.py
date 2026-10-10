@@ -6,8 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from fastapi.responses import FileResponse
 import os
 from sqlalchemy.orm import Session
+from typing import Any
 
 from app.database.session import get_db
+from app.llm.base import LLMProvider
+from app.llm.factory import get_llm_provider
 from app.llm.ollama_provider import OllamaProvider, get_ollama_provider
 from app.services.chat_service import ChatService
 from app.voice.events import RealtimeClientEvent, RealtimeEventType, RealtimeServerEvent
@@ -34,6 +37,16 @@ router = APIRouter(
 )
 
 
+def get_active_voice_llm(
+    canonical_llm: LLMProvider = Depends(get_llm_provider),
+    legacy_llm: Any = Depends(get_ollama_provider),
+) -> LLMProvider:
+    """Dependency resolver supporting cloud-first primary while honoring legacy mock overrides."""
+    if not isinstance(legacy_llm, OllamaProvider):
+        return legacy_llm
+    return canonical_llm
+
+
 @router.get("/ui", response_class=FileResponse)
 async def get_voice_ui():
     """Serve P-MAI desktop/web voice interface."""
@@ -47,7 +60,7 @@ async def get_voice_ui():
 async def voice_chat(
     request: VoiceChatRequest,
     db: Session = Depends(get_db),
-    llm: OllamaProvider = Depends(get_ollama_provider),
+    llm: LLMProvider = Depends(get_active_voice_llm),
 ) -> VoiceChatResponse:
     """
     Voice Chat endpoint.
@@ -108,7 +121,7 @@ async def websocket_realtime_voice(
     conversation_id: str = "default",
     user_id: str = "default",
     db: Session = Depends(get_db),
-    llm: OllamaProvider = Depends(get_ollama_provider),
+    llm: LLMProvider = Depends(get_active_voice_llm),
 ):
     """
     WebSocket endpoint for full-duplex real-time voice interaction.

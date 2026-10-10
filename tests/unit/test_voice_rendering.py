@@ -132,3 +132,17 @@ def test_safety_disclaimers_preserved(formatter):
 def test_empty_input_formatting(formatter):
     assert formatter.format_for_speech("") == ""
     assert formatter.format_for_speech("   ") == ""
+
+
+# -------------------------------------------------------------------------
+# 8. Emojis and Pictographs Stripped for TTS
+# -------------------------------------------------------------------------
+def test_emojis_stripped_for_speech(formatter):
+    input_text = "Hello again, Sir! \U0001F31E How can I help you today? \U0001F60A"
+    spoken = formatter.format_for_speech(input_text)
+
+    # Emojis must be removed so TTS does not speak 'sun with face' or 'smiling face'
+    assert "\U0001F31E" not in spoken
+    assert "\U0001F60A" not in spoken
+    assert "sun with face" not in spoken.lower()
+    assert spoken == "Hello again, Sir! How can I help you today?"

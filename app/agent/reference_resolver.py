@@ -243,7 +243,26 @@ def resolve_task_reference(
             is_reference_resolved=True,
         )
 
-    # 5. Web Fetch follow-up references ("read that page", "the same page", "summarize that page")
+    # 5a. Check for repeat / read again command ("read it again", "repeat that", "say it again", "read that again")
+    repeat_patterns = (
+        r"^(?:please\s+)?(?:read|repeat|say)(?:\s+(?:it|that|this))?(?:\s+again)?[.!?]?$",
+        r"^(?:can\s+you\s+)?(?:read|repeat|say)(?:\s+(?:it|that|this))?(?:\s+again)?[.!?]?$",
+        r"^what\s+did\s+you\s+(?:just\s+)?say[.!?]?$",
+        r"^repeat(?:\s+the\s+last\s+(?:answer|response|result))?[.!?]?$",
+    )
+    if any(bool(re.match(p, stripped, re.IGNORECASE)) for p in repeat_patterns):
+        last_ans = ctx.get("last_answer") or ctx.get("last_output")
+        if not last_ans and active_task.completed_steps:
+            last_ans = active_task.completed_steps[-1].output_text
+        if last_ans:
+            return ReferenceResolutionResult(
+                resolved_message=last_ans,
+                is_reference_resolved=True,
+                is_continuation=True,
+                target_tool="repeat",
+            )
+
+    # 5b. Web Fetch follow-up references ("read that page", "the same page", "summarize that page")
     fetch_ref_match = any(
         phrase in lowered
         for phrase in (
@@ -255,7 +274,7 @@ def resolve_task_reference(
             "summarize that page",
             "fetch that page",
         )
-    )
+    ) and not any(r in lowered for r in ("again", "repeat", "say that", "read that again"))
 
     if fetch_ref_match and not re.search(r"https?://[^\s>]+", stripped):
         # Ambiguity check: multiple documentation pages present

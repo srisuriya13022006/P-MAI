@@ -6,9 +6,12 @@ from app.core.config import settings
 class OllamaProvider:
     """Handles communication with a local Ollama model."""
 
-    def __init__(self):
-        self.model = settings.local_model
-        self.client = Client(host=settings.ollama_base_url)
+    provider_name: str = "ollama"
+    provider_type: str = "local"
+
+    def __init__(self, model: str | None = None, base_url: str | None = None):
+        self.model = model or settings.local_model
+        self.client = Client(host=base_url or settings.ollama_base_url)
 
     def generate(
         self,

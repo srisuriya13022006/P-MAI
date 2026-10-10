@@ -24,11 +24,20 @@ def test_stt_factory_mock_dispatch():
 
 
 def test_stt_factory_local_dispatch():
-    for name in ("local", "whisper_local", "local_whisper", "default", "", None):
+    for name in ("local", "whisper_local", "local_whisper"):
         cfg = VoiceConfig(stt_provider=name, stt_local_model="tiny")
         provider = create_stt_provider(cfg)
         assert isinstance(provider, LocalWhisperSTTAdapter)
         assert provider.model_name == "tiny"
+
+
+def test_stt_factory_default_cloud_resilient_dispatch():
+    from app.voice.stt.resilient_adapter import ResilientSTTAdapter
+    for name in ("default", "", None):
+        cfg = VoiceConfig(stt_provider=name, stt_local_model="tiny")
+        provider = create_stt_provider(cfg)
+        assert isinstance(provider, ResilientSTTAdapter)
+
 
 
 def test_stt_factory_cloud_dispatch_with_key():

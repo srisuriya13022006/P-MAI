@@ -1,0 +1,75 @@
+{
+  "step1_assemblyai_model": {
+    "configured_model": "universal-3-6-pro",
+    "effective_model": "universal-3-6-pro",
+    "test_transcript": "Hello, my",
+    "latency_ms": 3578.629599993292
+  },
+  "simple_queries": [
+    {
+      "label": "Hello",
+      "transcript": "Hello.",
+      "response_text": "Hey! How can I help you today?",
+      "total_wall_ms": 5883.381699997699,
+      "tts_chunks": 0,
+      "route": "local",
+      "intent": "greeting",
+      "router_ms": 7757.085899997037,
+      "stt_provider": "assemblyai (v3 streaming)",
+      "stt_model": "universal-3-6-pro",
+      "llm_provider": "groq",
+      "llm_model": "openai/gpt-oss-20b"
+    },
+    {
+      "label": "All okay",
+      "transcript": "All okay.",
+      "response_text": "Glad to hear it! If you need anything else, just let me know.",
+      "total_wall_ms": 18697.087000000465,
+      "tts_chunks": 0,
+      "route": "local",
+      "intent": "acknowledge",
+      "router_ms": 533.823099998699,
+      "stt_provider": "assemblyai (v3 streaming)",
+      "stt_model": "universal-3-6-pro",
+      "llm_provider": "groq",
+      "llm_model": "openai/gpt-oss-20b"
+    },
+    {
+      "label": "What is your name?",
+      "transcript": "What is your name?",
+      "response_text": "I'm MAI, your multipurpose AI assistant.",
+      "total_wall_ms": 3550.594300002558,
+      "tts_chunks": 0,
+      "route": "local",
+      "intent": "identify_self",
+      "router_ms": 14107.766499997524,
+      "stt_provider": "assemblyai (v3 streaming)",
+      "stt_model": "universal-3-6-pro",
+      "llm_provider": "groq",
+      "llm_model": "openai/gpt-oss-20b"
+    },
+    {
+      "label": "What time is it?",
+      "transcript": "What time is it?",
+      "response_text": "The current time in New York is 02:48:46 (America/New_York).",
+      "total_wall_ms": 21136.494200000016,
+      "tts_chunks": 0,
+      "route": "tool",
+      "intent": "datetime",
+      "router_ms": 853.1761999984155,
+      "stt_provider": "assemblyai (v3 streaming)",
+      "stt_model": "universal-3-6-pro",
+      "llm_provider": "groq",
+      "llm_model": "openai/gpt-oss-20b"
+    }
+  ],
+  "context_continuation": {
+    "turn1_prompt": "Search the web for today's AI news.",
+    "turn1_response_preview": "Here\u2019s a quick roundup of the most notable AI stories today\u202f\u2014\u202fall from the latest web results: - **Frontier labs are quietly testing their new math\u2011ca",
+    "turn1_ms": 6166.677699999127,
+    "turn2_prompt": "Read it again.",
+    "turn2_response_preview": "Here\u2019s a quick roundup of the most notable AI stories today\u202f\u2014\u202fall from the latest web results: - **Frontier labs are quietly testing their new math\u2011ca",
+    "turn2_ms": 13.605400003143586,
+    "success": true
+  }
+}

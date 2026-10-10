@@ -30,7 +30,7 @@ class LocalWhisperSTTAdapter(StreamingSpeechToTextProvider):
 
     def __init__(
         self,
-        model_name: str = "tiny",
+        model_name: str = "base",
         device: str = "cpu",
         compute_type: str = "int8",
         language: str = "en",

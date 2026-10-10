@@ -114,7 +114,11 @@ class PMAIVoiceClient:
         )
 
         try:
-            self.ws = await websockets.connect(query_url)
+            self.ws = await websockets.connect(
+                query_url,
+                ping_interval=30,
+                ping_timeout=120,
+            )
             self.is_connected = True
             self.reconnect_attempts = 0
             self.session_metrics["connection_latency_ms"] = round((time.perf_counter() - t_start) * 1000.0, 2)

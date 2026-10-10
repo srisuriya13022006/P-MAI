@@ -1,0 +1,163 @@
+{
+  "turns": [
+    {
+      "label": "Hello",
+      "transcript": "Hello.",
+      "response_text": "Hey there! How can I help you today?",
+      "finalize_turnaround_ms": 5714.415499998722,
+      "total_wall_ms": 8267.416100003175,
+      "test_code": "A",
+      "stt_provider": "assemblyai",
+      "stt_model": "universal-3-6-pro",
+      "route": "local",
+      "intent": "greet",
+      "llm_provider_model": "groq/openai/gpt-oss-20b",
+      "groq_calls_made": 1,
+      "prompt_tokens": 351,
+      "completion_tokens": 33,
+      "total_tokens": 384,
+      "fallback_occurred": false,
+      "call_stages": [
+        "conversation"
+      ],
+      "http_statuses": [
+        "200_OK"
+      ],
+      "fallback_reason": null
+    },
+    {
+      "label": "All okay",
+      "transcript": "All okay.",
+      "response_text": "Glad to hear it! Let me know if there's anything else I can help with.",
+      "finalize_turnaround_ms": 2545.356199989328,
+      "total_wall_ms": 4883.538800000679,
+      "test_code": "B",
+      "stt_provider": "assemblyai",
+      "stt_model": "universal-3-6-pro",
+      "route": "local",
+      "intent": "acknowledge",
+      "llm_provider_model": "groq/openai/gpt-oss-20b",
+      "groq_calls_made": 1,
+      "prompt_tokens": 352,
+      "completion_tokens": 45,
+      "total_tokens": 397,
+      "fallback_occurred": false,
+      "call_stages": [
+        "conversation"
+      ],
+      "http_statuses": [
+        "200_OK"
+      ],
+      "fallback_reason": null
+    },
+    {
+      "label": "What is your name?",
+      "transcript": "What is your name?",
+      "response_text": "I'm MAI, your multipurpose AI assistant.",
+      "finalize_turnaround_ms": 1737.8807999921264,
+      "total_wall_ms": 4389.187999986461,
+      "test_code": "C",
+      "stt_provider": "assemblyai",
+      "stt_model": "universal-3-6-pro",
+      "route": "local (fast_path)",
+      "intent": "identify_self",
+      "llm_provider_model": "none (0 calls - deterministic fast path)",
+      "groq_calls_made": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "fallback_occurred": false,
+      "call_stages": [],
+      "http_statuses": [],
+      "fallback_reason": null
+    },
+    {
+      "label": "What time is it?",
+      "transcript": "What time is it?",
+      "response_text": "The current time is 15:38:19 (Asia/Kolkata).",
+      "finalize_turnaround_ms": 1895.0478000042494,
+      "total_wall_ms": 4330.249000006006,
+      "test_code": "D",
+      "stt_provider": "assemblyai",
+      "stt_model": "universal-3-6-pro",
+      "route": "tool (fast_path)",
+      "intent": "datetime",
+      "llm_provider_model": "none (0 calls - deterministic DateTimeTool)",
+      "groq_calls_made": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "fallback_occurred": false,
+      "call_stages": [],
+      "http_statuses": [],
+      "fallback_reason": null
+    },
+    {
+      "label": "What time is it in Tokyo?",
+      "transcript": "What time is it in Tokyo?",
+      "response_text": "The current time in Tokyo is 19:08:25 (Asia/Tokyo).",
+      "finalize_turnaround_ms": 2146.7319000075804,
+      "total_wall_ms": 4823.2885000034,
+      "test_code": "E",
+      "stt_provider": "assemblyai",
+      "stt_model": "universal-3-6-pro",
+      "route": "tool (fast_path)",
+      "intent": "datetime",
+      "llm_provider_model": "none (0 calls - deterministic DateTimeTool)",
+      "groq_calls_made": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "fallback_occurred": false,
+      "call_stages": [],
+      "http_statuses": [],
+      "fallback_reason": null
+    },
+    {
+      "label": "Search the web for today's AI news.",
+      "transcript": "Search the web for today's AI news.",
+      "response_text": "Here\u2019s a quick roundup of the AI stories that made the news today: - A new AP\u2011NORC poll shows that a majority of Americans feel AI is moving too fast and that powerful models could \u201cevade human control\u201d and harm society. The poll also notes that tech leaders are calling for a slowdown so regulation can keep up, while President Trump has urged that the pace should not be slowed for fear of falling behind China. [AP News](https://apnews.com/article/artificial-intelligence-ai-poll-trump-democrats-republicans-9ce5531b7ea53234c4e600f",
+      "finalize_turnaround_ms": 11463.330700004008,
+      "total_wall_ms": 14763.297199999215,
+      "test_code": "F",
+      "route": "tool",
+      "intent": "web_search",
+      "stt_provider": "assemblyai",
+      "stt_model": "universal-3-6-pro",
+      "llm_provider_model": "groq/openai/gpt-oss-20b",
+      "groq_calls_made": 1,
+      "prompt_tokens": 2121,
+      "completion_tokens": 150,
+      "total_tokens": 2271,
+      "fallback_occurred": false,
+      "call_stages": [
+        "router"
+      ],
+      "http_statuses": [
+        "200_OK"
+      ],
+      "fallback_reason": null
+    },
+    {
+      "label": "Read it again.",
+      "transcript": "Read it again.",
+      "response_text": "Here\u2019s a quick roundup of the AI stories that made the news today: - A new AP\u2011NORC poll shows that a majority of Americans feel AI is moving too fast and that powerful models could \u201cevade human control\u201d and harm society. The poll also notes that tech leaders are calling for a slowdown so regulation can keep up, while President Trump has urged that the pace should not be slowed for fear of falling behind China. [AP News](https://apnews.com/article/artificial-intelligence-ai-poll-trump-democrats-republicans-9ce5531b7ea53234c4e600f",
+      "finalize_turnaround_ms": 6682.409799992456,
+      "total_wall_ms": 8850.496299986844,
+      "test_code": "G",
+      "route": "context_continuation",
+      "intent": "repetition",
+      "stt_provider": "assemblyai",
+      "stt_model": "universal-3-6-pro",
+      "llm_provider_model": "none (0 calls - prior response reused)",
+      "groq_calls_made": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "fallback_occurred": false,
+      "call_stages": [],
+      "http_statuses": [],
+      "fallback_reason": null
+    }
+  ]
+}

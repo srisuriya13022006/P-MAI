@@ -3,68 +3,140 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>P-MAI Voice Assistant</title>
+  <title>MAI — Autonomous Neural Voice Interface</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/voice/style.css">
   <link rel="icon" href="data:,">
 </head>
-<body>
-  <div class="app-container">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="title-area">
-        <div class="logo-badge">M</div>
-        <div class="title-text">
-          <h1>P-MAI Voice Assistant</h1>
-          <span>Autonomous Real-Time Conversational Agent</span>
+<body class="jarvis-theme">
+  <!-- Ambient background scanline & cyber grid overlay -->
+  <div class="hud-scanlines"></div>
+  <div class="hud-grid-overlay"></div>
+  <div class="hud-vignette"></div>
+
+  <div class="hud-container">
+    <!-- Top HUD Telemetry Bar -->
+    <header class="hud-header">
+      <div class="hud-brand">
+        <div class="arc-mini-icon">
+          <div class="arc-mini-ring"></div>
+          <div class="arc-mini-dot"></div>
+        </div>
+        <div class="hud-title-group">
+          <div class="hud-system-title">MAI <span class="hud-version">MK-IV // AI ASSISTANT</span></div>
+          <div class="hud-system-sub">AUTONOMOUS MULTI-AGENT INTELLIGENCE • NEURAL VOICE CORE</div>
         </div>
       </div>
-      <div class="connection-pill">
-        <div id="conn-dot" class="status-dot"></div>
-        <span id="conn-text">Connecting...</span>
+
+      <div class="hud-telemetry-cluster">
+        <div class="telemetry-item">
+          <span class="telemetry-label">SYS.FREQ</span>
+          <span class="telemetry-val">16.0 kHz</span>
+        </div>
+        <div class="telemetry-item">
+          <span class="telemetry-label">PROTOCOL</span>
+          <span class="telemetry-val">WS-REALTIME</span>
+        </div>
+        <div class="connection-pill">
+          <div id="conn-dot" class="status-dot"></div>
+          <span id="conn-text">INITIALIZING...</span>
+        </div>
       </div>
     </header>
 
-    <!-- State & Visualizer Hero -->
-    <div class="state-hero">
-      <div id="state-badge" class="state-badge">
-        <div id="pulse-indicator" class="pulse-indicator"></div>
-        <span id="state-text">Ready</span>
+    <!-- Centerpiece: J.A.R.V.I.S. Arc Reactor Core & Dynamic Hologram -->
+    <section class="arc-reactor-section">
+      <div class="arc-reactor-wrapper" id="arc-reactor-core">
+        <!-- Outer Rotating Rings -->
+        <div class="arc-ring arc-ring-outer"></div>
+        <div class="arc-ring arc-ring-ticks"></div>
+        <div class="arc-ring arc-ring-mid"></div>
+        <div class="arc-ring arc-ring-counter"></div>
+        <div class="arc-radar-sweep"></div>
+        
+        <!-- Core Emitter & Glowing Sphere -->
+        <div class="arc-emitter">
+          <div class="arc-pulse-glow"></div>
+          <div class="arc-energy-center">
+            <div id="pulse-indicator" class="pulse-indicator"></div>
+          </div>
+        </div>
+
+        <!-- Center HUD Status Display -->
+        <div id="state-badge" class="state-badge">
+          <span class="hud-bracket">[</span>
+          <span id="state-text">SYSTEM READY</span>
+          <span class="hud-bracket">]</span>
+        </div>
       </div>
 
-      <canvas id="visualizer" class="visualizer-canvas" width="600" height="70"></canvas>
-    </div>
+      <!-- Real-Time Holographic Audio Waveform / Visualizer -->
+      <div class="visualizer-container">
+        <div class="hud-corner top-left"></div>
+        <div class="hud-corner top-right"></div>
+        <div class="hud-corner bottom-left"></div>
+        <div class="hud-corner bottom-right"></div>
+        <div class="visualizer-title-bar">
+          <span>SPECTRUM ANALYZER // ACOUSTIC FEED</span>
+          <span id="audio-rate-indicator">LIVE PCM-16</span>
+        </div>
+        <canvas id="visualizer" class="visualizer-canvas" width="640" height="75"></canvas>
+      </div>
+    </section>
 
-    <!-- Live partial transcript -->
-    <div id="live-transcript" class="live-transcript-box"></div>
+    <!-- Live Tactical Transcript Banner -->
+    <div class="transcript-panel">
+      <div class="terminal-prefix">&gt; AUDIO_INTAKE:</div>
+      <div id="live-transcript" class="live-transcript-box">Awaiting vocal directive...</div>
+    </div>
 
     <!-- Error Banner -->
     <div id="error-banner" class="error-banner"></div>
 
-    <!-- Conversation Feed -->
-    <div id="conversation-feed" class="conversation-feed">
-      <div class="message-card mai-message">
-        <div class="mai-label">MAI</div>
-        <div>Ready for voice interaction. Click Speak or press Spacebar.</div>
+    <!-- Holographic Conversation Feed -->
+    <main class="feed-section">
+      <div class="feed-header">
+        <span class="feed-title">COMMUNICATION STREAM // REALTIME LOG</span>
+        <span class="feed-status-tag">BUFFER: 20 SLOTS</span>
       </div>
-    </div>
+      <div id="conversation-feed" class="conversation-feed">
+        <div class="message-card mai-message">
+          <div class="mai-label">MAI // CORE</div>
+          <div class="message-body">Greetings. All subroutines online and calibrated. Ready for voice interaction. Click Engage or press Spacebar.</div>
+        </div>
+      </div>
+    </main>
 
-    <!-- Main Controls -->
-    <div class="controls-area">
-      <button id="btn-speak" class="btn btn-speak">
-        🎙 Speak
-      </button>
-      <button id="btn-stop" class="btn btn-stop" title="Stop speech playback without cancelling task">
-        ⏹ Stop Speaking
-      </button>
-      <button id="btn-cancel" class="btn btn-cancel" title="Cancel active background task">
-        ❌ Cancel Task
-      </button>
-    </div>
+    <!-- Tactical Command Controls -->
+    <footer class="hud-controls-footer">
+      <div class="controls-area">
+        <button id="btn-speak" class="btn btn-speak">
+          <span class="btn-glow-ring"></span>
+          <span class="btn-icon">🎙</span>
+          <span class="btn-text">ENGAGE VOICE</span>
+        </button>
+        <button id="btn-stop" class="btn btn-stop" title="Stop speech playback without cancelling task">
+          <span class="btn-icon">⏹</span>
+          <span class="btn-text">ABORT AUDIO</span>
+        </button>
+        <button id="btn-cancel" class="btn btn-cancel" title="Cancel active background task">
+          <span class="btn-icon">❌</span>
+          <span class="btn-text">PURGE TASK</span>
+        </button>
+      </div>
 
-    <!-- Footer Status / Metrics -->
-    <footer class="app-footer">
-      <span id="metrics-bar">Ready</span>
-      <span>P-MAI v1.0 • P15 Desktop Voice Client</span>
+      <!-- Telemetry Status Bar -->
+      <div class="app-footer">
+        <div class="metrics-slot">
+          <span class="metrics-icon">⚡</span>
+          <span id="metrics-bar">STANDBY // READY</span>
+        </div>
+        <div class="system-tag">
+          <span>P-MAI v1.0 • JARVIS HUD PROTOCOL</span>
+        </div>
+      </div>
     </footer>
   </div>
 

@@ -6,6 +6,7 @@ Enforces that voice remains strictly an I/O presentation layer.
 import asyncio
 import base64
 import binascii
+import re
 import time
 from typing import AsyncGenerator
 
@@ -212,6 +213,7 @@ class RealtimeVoicePipeline:
         # 3. AUDIO_END
         # -------------------------------------------------------------
         elif event.type == RealtimeEventType.AUDIO_END:
+            t_server_recv_audio_end = time.perf_counter()
             if session.status == SessionStatus.LISTENING:
                 session.transition_to(SessionStatus.TRANSCRIBING)
 
@@ -223,6 +225,9 @@ class RealtimeVoicePipeline:
 
             # Finalize Speech-to-Text
             final_transcript = ""
+            stt_latency_ms = 0.0
+            stt_res = None
+            t_stt_start = time.perf_counter()
             try:
                 if isinstance(self.stt_provider, StreamingSpeechToTextProvider):
                     stt_res = await self.stt_provider.finalize_stream()
@@ -244,6 +249,9 @@ class RealtimeVoicePipeline:
                 )
                 session.transition_to(SessionStatus.LISTENING)
                 return
+
+            t_stt_end = time.perf_counter()
+            stt_latency_ms = round((t_stt_end - t_stt_start) * 1000.0, 2)
 
             if not final_transcript or not final_transcript.strip():
                 yield RealtimeServerEvent(
@@ -292,13 +300,15 @@ class RealtimeVoicePipeline:
 
             try:
                 if self.chat_service:
-                    grounded_response = self.chat_service.chat(
+                    grounded_response = await asyncio.to_thread(
+                        self.chat_service.chat,
                         conversation_id=session.conversation_id,
                         user_id=session.user_id,
                         user_message=final_transcript.strip(),
                     )
                 elif self.orchestrator:
-                    grounded_response = self.orchestrator.handle(
+                    grounded_response = await asyncio.to_thread(
+                        self.orchestrator.handle,
                         user_message=final_transcript.strip(),
                         conversation_messages=[],
                         memory_context=[],
@@ -318,19 +328,34 @@ class RealtimeVoicePipeline:
                 session.transition_to(SessionStatus.LISTENING)
                 return
 
-            mai_latency_ms = round((time.perf_counter() - mai_start) * 1000.0, 2)
+            mai_end = time.perf_counter()
+            mai_latency_ms = round((mai_end - mai_start) * 1000.0, 2)
             session.current_response_text = grounded_response
 
             # Stream TTS Output
             session.transition_to(SessionStatus.SPEAKING)
             tts_start = time.perf_counter()
+            t_first_tts_chunk = None
             chunk_index = 0
 
             try:
                 formatted_speech = self.formatter.format_for_speech(grounded_response)
+                if len(formatted_speech) > 450:
+                    sentences = re.split(r"(?<=[.!?])\s+", formatted_speech)
+                    shortened = []
+                    curr_len = 0
+                    for s in sentences:
+                        shortened.append(s)
+                        curr_len += len(s)
+                        if curr_len >= 300:
+                            break
+                    speech_to_synthesize = " ".join(shortened)
+                else:
+                    speech_to_synthesize = formatted_speech
+
                 if isinstance(self.tts_provider, StreamingTextToSpeechProvider):
                     async for tts_chunk in self.tts_provider.synthesize_stream(
-                        text=formatted_speech,
+                        text=speech_to_synthesize,
                         voice=self.config.default_voice,
                         language=self.config.default_language,
                         chunk_duration_seconds=self.config.realtime_tts_chunk_duration_seconds,
@@ -338,6 +363,9 @@ class RealtimeVoicePipeline:
                         # If barge-in occurred while yielding chunks, abort playback immediately
                         if session.is_interrupted or session.status == SessionStatus.INTERRUPTED:
                             break
+
+                        if t_first_tts_chunk is None:
+                            t_first_tts_chunk = time.perf_counter()
 
                         chunk_index += 1
                         yield RealtimeServerEvent(
@@ -353,6 +381,7 @@ class RealtimeVoicePipeline:
                         voice=self.config.default_voice,
                         language=self.config.default_language,
                     )
+                    t_first_tts_chunk = time.perf_counter()
                     if not session.is_interrupted and session.status == SessionStatus.SPEAKING:
                         yield RealtimeServerEvent(
                             type=RealtimeEventType.RESPONSE_CHUNK,
@@ -371,10 +400,23 @@ class RealtimeVoicePipeline:
                     error_message=str(tts_err),
                 )
 
-            tts_latency_ms = round((time.perf_counter() - tts_start) * 1000.0, 2)
+            tts_end = time.perf_counter()
+            tts_latency_ms = round((tts_end - tts_start) * 1000.0, 2)
 
             # If not interrupted, emit RESPONSE_END with final grounded text
             if not session.is_interrupted and session.status == SessionStatus.SPEAKING:
+                from app.core.runtime_mode import determine_runtime_mode
+                stt_prov = getattr(self.stt_provider, "provider_name", "assemblyai")
+                stt_md = getattr(self.stt_provider, "stt_mode", "CLOUD" if stt_prov in ("assemblyai", "whisper", "groq", "openai") else "LOCAL_FALLBACK")
+                orch = getattr(self.chat_service, "orchestrator", self.orchestrator)
+                llm_obj = getattr(orch, "llm", None)
+                llm_prov = getattr(llm_obj, "provider_name", "groq")
+                llm_md = getattr(llm_obj, "runtime_mode", "CLOUD" if getattr(llm_obj, "provider_type", "cloud") == "cloud" else "LOCAL_FALLBACK")
+                rt_mode = determine_runtime_mode(stt_md, llm_md).value
+
+                llm_accounting = getattr(llm_obj, "get_turn_accounting", lambda: {})() if llm_obj else {}
+                stt_model_name = getattr(stt_res, "model_name", None) or getattr(self.stt_provider, "model_name", "universal-3-6-pro")
+
                 yield RealtimeServerEvent(
                     type=RealtimeEventType.RESPONSE_END,
                     session_id=session.session_id,
@@ -382,8 +424,24 @@ class RealtimeVoicePipeline:
                     text_chunk=grounded_response,
                     is_interrupted=False,
                     metadata={
+                        "stt_latency_ms": stt_latency_ms,
+                        "stt_provider": stt_prov,
+                        "stt_model": stt_model_name,
                         "mai_latency_ms": mai_latency_ms,
                         "tts_latency_ms": tts_latency_ms,
+                        "runtime_mode": rt_mode,
+                        "llm_provider": llm_prov,
+                        "llm_accounting": llm_accounting,
+                        "timings": {
+                            "t_server_recv_audio_end": t_server_recv_audio_end,
+                            "t_stt_start": t_stt_start,
+                            "t_stt_end": t_stt_end,
+                            "t_agent_start": mai_start,
+                            "t_agent_end": mai_end,
+                            "t_tts_start": tts_start,
+                            "t_first_tts_chunk": t_first_tts_chunk or tts_end,
+                            "t_tts_end": tts_end,
+                        },
                     },
                 )
                 session.transition_to(SessionStatus.LISTENING)

@@ -22,7 +22,7 @@ class VoiceConfig:
     """Configurable parameters for voice I/O pipeline."""
 
     enabled: bool = True
-    stt_provider: str = "local"
+    stt_provider: str = "assemblyai"
     tts_provider: str = "local"
     supported_formats: list[str] = field(default_factory=lambda: list(DEFAULT_SUPPORTED_AUDIO_FORMATS))
     max_audio_size_bytes: int = 10 * 1024 * 1024  # 10 MB limit
@@ -49,15 +49,20 @@ class VoiceConfig:
     realtime_cancel_phrases: list[str] = field(
         default_factory=lambda: ["cancel this task", "cancel task", "stop this task", "abort task", "cancel"]
     )
-    # Production Provider Settings (P13)
+    # Production Provider Settings (P13 / P15.4)
     stt_api_key: str | None = None
     tts_api_key: str | None = None
     stt_base_url: str = "https://api.groq.com/openai/v1"
     tts_base_url: str = "https://api.openai.com/v1"
     sample_rate: int = 16000
     audio_format: str = "audio/wav"
+    # AssemblyAI Provider Settings (P15.4)
+    assemblyai_api_key: str | None = None
+    assemblyai_stt_model: str = "universal-3-6-pro"
+    stt_fallback_enabled: bool = True
+
     # Local-First Provider Settings (P14)
-    stt_local_model: str = "tiny"
+    stt_local_model: str = "base"
     tts_local_engine: str = "pyttsx3"
 
     def __post_init__(self):
@@ -77,7 +82,7 @@ class VoiceConfig:
 
         return cls(
             enabled=getattr(settings_obj, "voice_enabled", True),
-            stt_provider=getattr(settings_obj, "voice_stt_provider", "local"),
+            stt_provider=getattr(settings_obj, "voice_stt_provider", "assemblyai"),
             tts_provider=getattr(settings_obj, "voice_tts_provider", "local"),
             supported_formats=getattr(settings_obj, "voice_supported_formats", DEFAULT_SUPPORTED_AUDIO_FORMATS),
             max_audio_size_bytes=getattr(settings_obj, "voice_max_audio_size_bytes", 10 * 1024 * 1024),
@@ -93,6 +98,10 @@ class VoiceConfig:
             tts_base_url=getattr(settings_obj, "voice_tts_base_url", "https://api.openai.com/v1"),
             sample_rate=getattr(settings_obj, "voice_sample_rate", 16000),
             audio_format=getattr(settings_obj, "voice_audio_format", "audio/wav"),
-            stt_local_model=getattr(settings_obj, "voice_stt_local_model", "tiny"),
+            assemblyai_api_key=getattr(settings_obj, "assemblyai_api_key", None),
+            assemblyai_stt_model=getattr(settings_obj, "assemblyai_stt_model", "universal-3-6-pro"),
+
+            stt_fallback_enabled=getattr(settings_obj, "stt_fallback_enabled", True),
+            stt_local_model=getattr(settings_obj, "voice_stt_local_model", "base"),
             tts_local_engine=getattr(settings_obj, "voice_tts_local_engine", "pyttsx3"),
         )

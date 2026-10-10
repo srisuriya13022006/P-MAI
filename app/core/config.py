@@ -1,3 +1,5 @@
+from typing import Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,9 +9,30 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     local_model: str = "qwen3:4b"
     cloud_model: str = "openai/gpt-oss-20b"
+    cloud_fallback_models: list[str] | str = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+
+    @field_validator("cloud_fallback_models")
+    @classmethod
+    def parse_cloud_fallback_models(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            import json
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+            return [m.strip() for m in v.split(",") if m.strip()]
+        return v
+
     use_cloud_fallback: bool = True
     groq_api_key: str | None = None
     tavily_api_key: str | None = None
+
+    # LLM Provider Configuration (P15.4 Cloud-First)
+    llm_provider: str = "cloud"  # 'cloud' (primary) or 'ollama' / 'local'
+    cloud_llm_provider: str = "groq"
+    llm_fallback_enabled: bool = True
 
     database_url: str
     conversation_summary_interval: int = 10
@@ -23,10 +46,13 @@ class Settings(BaseSettings):
     enable_llm_planner: bool = False  # Controlled LLM decomposition disabled by default for deterministic execution
     task_state_ttl_seconds: int = 300  # Multi-turn active task state TTL in seconds (P8)
 
-    # Voice I/O Settings (P12 / P14)
+    # Voice I/O Settings (P12 / P14 / P15.4)
     voice_enabled: bool = True
-    voice_stt_provider: str = "local"
+    voice_stt_provider: str = "assemblyai"  # AssemblyAI Realtime Streaming STT is primary (P15.4)
     voice_tts_provider: str = "local"
+    assemblyai_api_key: str | None = None
+    assemblyai_stt_model: str = "universal-3-6-pro"
+    stt_fallback_enabled: bool = True
     voice_supported_formats: list[str] = [
         "audio/wav",
         "audio/x-wav",
@@ -51,7 +77,7 @@ class Settings(BaseSettings):
     voice_sample_rate: int = 16000
     voice_audio_format: str = "audio/wav"
     # Local-First Voice Settings (P14)
-    voice_stt_local_model: str = "tiny"
+    voice_stt_local_model: str = "base"
     voice_tts_local_engine: str = "pyttsx3"
 
     model_config = SettingsConfigDict(

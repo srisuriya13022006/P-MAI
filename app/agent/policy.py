@@ -1,6 +1,7 @@
 import re
 
 from app.agent.tool_argument_resolver import (
+    resolve_calculator_arguments,
     resolve_datetime_arguments,
     resolve_web_fetch_arguments,
     resolve_web_search_arguments,
@@ -53,7 +54,11 @@ def is_self_identity_query(user_message: str) -> bool:
         # About MAI
         r"\b(?:tell\s+me\s+about\s+yourself|describe\s+yourself|introduce\s+yourself)\b",
         # Nature
-        r"\b(?:are\s+you\s+(?:an?\s+)?(?:ai|robot|bot|human|machine|program))\b",
+        r"\b(?:are\s+you\s+(?:an?\s+)?(?:ai|robot|bot|human|machine|program|mai|assistant|the\s+assistant))\b",
+        # Explicit MAI confirmation
+        r"\b(?:is\s+(?:this|that)\s+mai)\b",
+        # Identity inquiry
+        r"\b(?:your\s+identity|who\s+speaks|who\s+am\s+i\s+speaking\s+with|who\s+am\s+i\s+talking\s+to)\b",
         # Model
         r"\b(?:which|what)\s+(?:model|llm)\s+(?:are\s+you|is\s+this)\b",
         # Capabilities
@@ -61,6 +66,102 @@ def is_self_identity_query(user_message: str) -> bool:
     )
 
     return any(bool(re.search(pat, cleaned)) for pat in self_identity_patterns)
+
+
+def is_pure_datetime_query(user_message: str) -> bool:
+    """
+    Detect whether a query is purely asking for current or relative date/time.
+    Must exclude web searches (e.g. "Search the web for today's AI news"),
+    calculations (e.g. "10 days after today"), and document queries.
+    """
+    lowered = user_message.lower().strip()
+
+    # Exclude queries with search / web fetch / news markers
+    if any(marker in lowered for marker in (
+        "search", "find", "google", "look up", "http", "url", ".com", ".org",
+        "headline", "headlines", "news", "update", "updates", "weather", "event", "events",
+        "read", "fetch", "summarize", "page", "site", "web"
+    )):
+        return False
+
+    # Exclude arithmetic / offset calculation expressions
+    if any(marker in lowered for marker in (
+        "+", "-", "*", "/", "%", "plus", "minus", "calculate", "multiply", "divide",
+        "days after", "days before", "days from", "days ago", "hours from", "hours ago"
+    )):
+        return False
+
+    # Exclude memory management
+    if any(marker in lowered for marker in ("remember", "save", "forget", "my name", "about me")):
+        return False
+
+    # Check for direct datetime question patterns
+    dt_patterns = (
+        r"\b(?:what(?:\s+is|'s)?\s+(?:the\s+)?time|what\s+time\s+is\s+it|current\s+time|time\s+now)\b",
+        r"\b(?:time\s+in\s+[a-z]+)\b",
+        r"\b(?:what(?:\s+is|'s)?\s+(?:the\s+)?date|what\s+date\s+is\s+it|today's\s+date|todays\s+date|current\s+date)\b",
+        r"\b(?:date\s+in\s+[a-z]+)\b",
+        r"\b(?:what(?:\s+is|'s)?\s+(?:the\s+)?day|what\s+day\s+is\s+(?:it|today)|day\s+of\s+(?:the\s+)?week)\b",
+        r"\b(?:day\s+in\s+[a-z]+)\b",
+        r"\b(?:what\s+date\s+(?:is|will\s+be)\s+tomorrow|what\s+day\s+(?:is|will\s+be)\s+tomorrow)\b",
+        r"\b(?:what\s+date\s+(?:was|is)\s+yesterday|what\s+day\s+(?:was|is)\s+yesterday)\b",
+        r"\b(?:current\s+date\s+and\s+time|current\s+datetime|date\s+and\s+time\s+now)\b",
+    )
+    return any(bool(re.search(pat, lowered)) for pat in dt_patterns)
+
+
+def is_greeting_query(user_message: str) -> bool:
+    """Detect whether a query is a conversational greeting."""
+    lowered = user_message.lower().strip()
+    cleaned = re.sub(r"[^\w\s]", "", lowered).strip()
+    return bool(re.match(
+        r"^(?:hi|hey|hello|greetings|howdy|good\s+(?:morning|afternoon|evening|day)|hey\s+there|hi\s+there)(?:\s+(?:mai|there|assistant))?$",
+        cleaned,
+    ))
+
+
+def is_acknowledgment_query(user_message: str) -> bool:
+    """Detect whether a query is a conversational acknowledgment or confirmation."""
+    lowered = user_message.lower().strip()
+    cleaned = re.sub(r"[^\w\s]", "", lowered).strip()
+    return bool(re.match(
+        r"^(?:all\s+okay|all\s+good|all\s+set|okay|ok|sounds\s+good|got\s+it|understood|cool|great|awesome|perfect|thanks|thank\s+you|thx|nice|sure|will\s+do|no\s+problem|noted)(?:\s+(?:mai|then|now|assistant))?$",
+        cleaned,
+    ))
+
+
+def is_farewell_query(user_message: str) -> bool:
+    """Detect whether a query is a conversational farewell."""
+    lowered = user_message.lower().strip()
+    cleaned = re.sub(r"[^\w\s]", "", lowered).strip()
+    return bool(re.match(
+        r"^(?:bye|goodbye|see\s+ya|see\s+you|see\s+you\s+later|farewell|have\s+a\s+good\s+(?:day|night|one)|take\s+care)(?:\s+(?:mai|now|assistant))?$",
+        cleaned,
+    ))
+
+
+def is_pure_calculator_query(user_message: str) -> bool:
+    """
+    Detect whether a query is a pure arithmetic calculation.
+    Must exclude date offsets, version comparisons, and web searches.
+    """
+    lowered = user_message.lower().strip()
+
+    # Exclusions
+    if any(marker in lowered for marker in (
+        "search", "find", "google", "look up", "http", "url", ".com", ".org",
+        "headline", "news", "version", "compare", "days", "hours", "weeks",
+        "months", "years", "today", "tomorrow", "yesterday", "remember", "save",
+    )):
+        return False
+
+    # Check for direct calculation question patterns or bare expressions
+    # Examples: "what is 25 times 47", "calculate 15 + 28", "25 * 47", "100 / 4"
+    calc_patterns = (
+        r"^(?:what(?:\s+is|'s)?\s+|calculate\s+|compute\s+|how\s+much\s+is\s+)?-?\d+(?:\.\d+)?\s*(?:[\+\-\*/%]|times|multiplied\s+by|plus|minus|divided\s+by)\s*-?\d+(?:\.\d+)?(?:\s*(?:[\+\-\*/%]|times|multiplied\s+by|plus|minus|divided\s+by)\s*-?\d+(?:\.\d+)?)*[.!?]*$",
+        r"^\s*-?\d+(?:\.\d+)?\s*[\+\-\*/%]\s*-?\d+(?:\.\d+)?\s*[.!?]*$",
+    )
+    return any(bool(re.match(pat, lowered)) for pat in calc_patterns)
 
 
 def is_explicit_memory_write_request(message: str) -> tuple[bool, str]:
@@ -85,10 +186,13 @@ def apply_policy(
     lowered = user_message.lower().strip()
 
     # 0. Check for MAI self-identity queries (e.g. "what is your name?", "who are you?", "bye, what is your name?")
-    if is_self_identity_query(user_message) or (
-        getattr(decision, "intent", None) == "identify_self"
-        and not any(m in lowered for m in ("my name", "about me", "about myself", "who am i", "my project"))
-    ):
+    has_tool_keywords = any(kw in lowered for kw in ("search", "find", "calculate", "plus", "minus", "http", "url", "compare", "time", "date", "weather"))
+    is_self_id = is_self_identity_query(user_message)
+    if not is_self_id and getattr(decision, "intent", None) == "identify_self":
+        if any(w in lowered for w in ("you", "your", "mai", "assistant")) and not has_tool_keywords and not any(m in lowered for m in ("my name", "about me", "about myself", "who am i", "my project")):
+            is_self_id = True
+
+    if is_self_id:
         if hasattr(decision, "intent"):
             decision.intent = "identify_self"
         decision.route = "local"
@@ -96,6 +200,64 @@ def apply_policy(
         decision.tool_arguments = {}
         decision.needs_clarification = False
         decision.reason = "Conversational self-identity query answered locally without tools or memory."
+        return decision
+
+    # 0b. Check for pure datetime queries (e.g. "What time is it?", "What time is it in Tokyo?")
+    if is_pure_datetime_query(user_message):
+        if hasattr(decision, "intent"):
+            decision.intent = "datetime"
+        decision.route = "tool"
+        decision.tools = ["datetime"]
+        decision.tool_arguments = resolve_datetime_arguments(
+            user_message,
+            decision.tool_arguments,
+        )
+        decision.needs_clarification = False
+        decision.reason = "Current date and time requests are handled by the datetime tool."
+        return decision
+
+    # 0c. Check for pure arithmetic calculator queries (e.g. "What is 25 times 47?", "Calculate 15 + 28")
+    if is_pure_calculator_query(user_message):
+        if hasattr(decision, "intent"):
+            decision.intent = "arithmetic"
+        decision.route = "tool"
+        decision.tools = ["calculator"]
+        decision.tool_arguments = resolve_calculator_arguments(user_message)
+        decision.needs_clarification = False
+        decision.reason = "Arithmetic requests are handled by the calculator tool."
+        return decision
+
+    # 0d. Check for conversational farewells (e.g. "Goodbye", "Bye", "See you later")
+    if is_farewell_query(user_message):
+        if hasattr(decision, "intent"):
+            decision.intent = "farewell"
+        decision.route = "local"
+        decision.tools = []
+        decision.tool_arguments = {}
+        decision.needs_clarification = False
+        decision.reason = "Conversational farewell routed locally."
+        return decision
+
+    # 0e. Check for conversational greetings (e.g. "Hello", "Hi", "Good morning")
+    if is_greeting_query(user_message):
+        if hasattr(decision, "intent"):
+            decision.intent = "greet"
+        decision.route = "local"
+        decision.tools = []
+        decision.tool_arguments = {}
+        decision.needs_clarification = False
+        decision.reason = "Conversational greeting routed locally."
+        return decision
+
+    # 0f. Check for conversational acknowledgments (e.g. "All okay", "Okay", "Sounds good")
+    if is_acknowledgment_query(user_message):
+        if hasattr(decision, "intent"):
+            decision.intent = "acknowledge"
+        decision.route = "local"
+        decision.tools = []
+        decision.tool_arguments = {}
+        decision.needs_clarification = False
+        decision.reason = "Conversational acknowledgment routed locally."
         return decision
 
     # Explicit check for user's own name query
@@ -108,6 +270,21 @@ def apply_policy(
         decision.needs_clarification = False
         decision.reason = "Questions about the user's name use memory retrieval."
         return decision
+
+    # Deterministic check for personal statements containing preferences or facts
+    personal_fact_patterns = (
+        r"^i\s+(?:prefer|like|love|dislike|hate|live\s+in|reside\s+in|work\s+at|work\s+as|use)\b",
+        r"^my\s+(?:name\s+is|favorite|favourite|preferred)\b",
+    )
+    if any(re.search(pat, lowered) for pat in personal_fact_patterns) and not lowered.endswith("?"):
+        decision.intent = "conversational"
+        decision.route = "local"
+        decision.tools = []
+        decision.tool_arguments = {}
+        decision.needs_clarification = False
+        decision.reason = "Personal statement without explicit remember intent routes to local conversational handling."
+        return decision
+
 
     has_math_expression = bool(
         re.search(
