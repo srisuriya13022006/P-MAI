@@ -61,8 +61,11 @@ def is_self_identity_query(user_message: str) -> bool:
         r"\b(?:your\s+identity|who\s+speaks|who\s+am\s+i\s+speaking\s+with|who\s+am\s+i\s+talking\s+to)\b",
         # Model
         r"\b(?:which|what)\s+(?:model|llm)\s+(?:are\s+you|is\s+this)\b",
-        # Capabilities
+        # Capabilities and Tools
         r"\b(?:what\s+can\s+you\s+do|what\s+are\s+your\s+capabilities|how\s+can\s+you\s+help(?:\s+me)?)\b",
+        r"\b(?:what\s+(?:tools|features|capabilities)\s+(?:do\s+you\s+have|are\s+available|are\s+implemented)|what\s+tools\s+are\s+there)\b",
+        r"\b(?:what\s+are\s+your\s+(?:tools|features|capabilities)|which\s+tools\s+do\s+you\s+have|your\s+tools|your\s+capabilities)\b",
+        r"\b(?:explain|list|describe|tell\s+me\s+about)\s+(?:your\s+)?(?:tools|capabilities|features)\b",
     )
 
     return any(bool(re.search(pat, cleaned)) for pat in self_identity_patterns)

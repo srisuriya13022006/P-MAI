@@ -126,8 +126,9 @@ class MAIOrchestrator:
 
     def _build_cloud_provider(self):
         try:
-            return GroqProvider(model=settings.cloud_model)
-        except (ImportError, ValueError):
+            from app.llm.factory import create_cloud_provider
+            return create_cloud_provider()
+        except Exception:
             return None
 
     def handle(
@@ -291,7 +292,14 @@ class MAIOrchestrator:
 
         # 4. If not resolving a pending clarification, run reference resolution
         if effective_message == user_message:
-            ref_res = resolve_task_reference(user_message, active_task)
+            ref_res = resolve_task_reference(
+                user_message,
+                active_task,
+                conversation_messages=conversation_messages,
+            )
+            if ref_res.is_reference_resolved and ref_res.target_tool == "repeat":
+                return ref_res.resolved_message
+
             if ref_res.needs_clarification:
                 clar_req = ClarificationRequest(
                     task_id=active_task.task_id if active_task else None,
@@ -410,6 +418,15 @@ class MAIOrchestrator:
         print("DECISION:", decision)
         print("TOOL ARGUMENTS:", decision.tool_arguments)
 
+        is_creative_or_long = bool(
+            re.search(
+                r"\b(?:story|tale|poem|song|lyrics|ballad|verse|rhyme|anthem|chant|essay|article|paragraphs?|"
+                r"explain\s+in\s+detail|elaborate|narrative|long\s+response|compose|write\s+a\s+(?:song|story|poem|ballad|verse))\b",
+                effective_message,
+                re.IGNORECASE,
+            )
+        )
+
         if decision.route == "local":
             if is_self_identity_query(effective_message):
                 return self._handle_self_identity_response(effective_message)
@@ -453,31 +470,77 @@ class MAIOrchestrator:
                         return "Would you like me to remember that?"
 
             # Conversational generation with sensible output token limits
-            max_tok = 150 if is_casual_conversation else (300 if len(effective_message.split()) < 18 else 800)
+            is_creative_or_long = bool(
+                re.search(
+                    r"\b(?:story|tale|poem|song|lyrics|ballad|verse|rhyme|anthem|chant|essay|article|paragraphs?|"
+                    r"explain\s+in\s+detail|elaborate|narrative|long\s+response|compose|write\s+a\s+(?:song|story|poem|ballad|verse))\b",
+                    effective_message,
+                    re.IGNORECASE,
+                )
+            )
+            if is_creative_or_long:
+                max_tok = 1000
+            elif is_casual_conversation:
+                max_tok = 150
+            elif len(effective_message.split()) < 18:
+                max_tok = 300
+            else:
+                max_tok = 800
+
+            effective_conv_messages = list(conversation_messages) if conversation_messages else [{"role": "user", "content": effective_message}]
+            if ref_res and ref_res.is_reference_resolved and ref_res.contextual_followup_type:
+                if effective_conv_messages and effective_conv_messages[-1].get("role") == "user":
+                    orig_content = effective_conv_messages[-1]["content"]
+                    if ref_res.contextual_followup_type == "direct_answer":
+                        effective_conv_messages[-1] = {
+                            "role": "user",
+                            "content": (
+                                f"{orig_content}\n"
+                                f"[Context: The user is specifically demanding a direct, immediate answer to their previous question: '{ref_res.original_question}'. "
+                                f"Answer the question directly in your very first sentence without repeating previous explanations, disclaimers, or using honorifics like Sir.]"
+                            ),
+                        }
+                    elif ref_res.contextual_followup_type == "compare":
+                        effective_conv_messages[-1] = {
+                            "role": "user",
+                            "content": (
+                                f"{orig_content}\n"
+                                f"[Context: The user wants a direct comparison. State who or which is more capable directly in the first sentence, then briefly explain why.]"
+                            ),
+                        }
+                    elif ref_res.contextual_followup_type == "explain":
+                        effective_conv_messages[-1] = {
+                            "role": "user",
+                            "content": (
+                                f"{orig_content}\n"
+                                f"[Context: The user is asking for a clear explanation of what you meant in your previous statement.]"
+                            ),
+                        }
+
             try:
                 try:
                     return self.llm.generate(
-                        conversation_messages,
+                        effective_conv_messages,
                         system_prompt=self._system_prompt(memory_context, user_profile),
                         stage="conversation",
                         max_tokens=max_tok,
                     )
                 except TypeError:
                     return self.llm.generate(
-                        conversation_messages,
+                        effective_conv_messages,
                         system_prompt=self._system_prompt(memory_context, user_profile),
                     )
             except Exception:
-                if settings.use_cloud_fallback and self.cloud_llm is not None:
+                if settings.use_cloud_fallback and self.cloud_llm is not None and not hasattr(self.llm, "primary_provider"):
                     try:
                         return self.cloud_llm.generate(
-                            conversation_messages,
+                            effective_conv_messages,
                             system_prompt=self._system_prompt(memory_context, user_profile),
                             max_tokens=max_tok,
                         )
                     except TypeError:
                         return self.cloud_llm.generate(
-                            conversation_messages,
+                            effective_conv_messages,
                             system_prompt=self._system_prompt(memory_context, user_profile),
                         )
                 raise
@@ -496,25 +559,63 @@ class MAIOrchestrator:
             )
 
         if decision.route == "memory":
+            effective_conv_messages = list(conversation_messages) if conversation_messages else [{"role": "user", "content": effective_message}]
             return self.llm.generate(
-                conversation_messages,
+                effective_conv_messages,
                 system_prompt=self._system_prompt(memory_context, user_profile),
             )
 
         if decision.route == "cloud":
-            if self.cloud_llm is None:
+            target = self.llm if hasattr(self.llm, "primary_provider") else (self.cloud_llm or self.llm)
+            if target is None:
                 return (
-                    "The Groq cloud provider is not configured yet. Add the 'openai' "
-                    "package and set GROQ_API_KEY to enable the cloud model."
+                    "Cloud provider is not configured yet. Add GEMINI_API_KEY or GROQ_API_KEY to enable the cloud model."
                 )
+            effective_conv_messages = list(conversation_messages) if conversation_messages else [{"role": "user", "content": effective_message}]
+            if ref_res and ref_res.is_reference_resolved and ref_res.contextual_followup_type:
+                if effective_conv_messages and effective_conv_messages[-1].get("role") == "user":
+                    orig_content = effective_conv_messages[-1]["content"]
+                    if ref_res.contextual_followup_type == "direct_answer":
+                        effective_conv_messages[-1] = {
+                            "role": "user",
+                            "content": (
+                                f"{orig_content}\n"
+                                f"[Context: The user is specifically demanding a direct, immediate answer to their previous question: '{ref_res.original_question}'. "
+                                f"Answer the question directly in your very first sentence without repeating previous explanations, disclaimers, or using honorifics like Sir.]"
+                            ),
+                        }
+                    elif ref_res.contextual_followup_type == "compare":
+                        effective_conv_messages[-1] = {
+                            "role": "user",
+                            "content": (
+                                f"{orig_content}\n"
+                                f"[Context: The user wants a direct comparison. State who or which is more capable directly in the first sentence, then briefly explain why.]"
+                            ),
+                        }
+                    elif ref_res.contextual_followup_type == "explain":
+                        effective_conv_messages[-1] = {
+                            "role": "user",
+                            "content": (
+                                f"{orig_content}\n"
+                                f"[Context: The user is asking for a clear explanation of what you meant in your previous statement.]"
+                            ),
+                        }
             try:
-                return self.cloud_llm.generate(
-                    conversation_messages,
-                    system_prompt=self._system_prompt(memory_context, user_profile),
-                )
+                try:
+                    return target.generate(
+                        effective_conv_messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="conversation",
+                        max_tokens=1000 if is_creative_or_long else 800,
+                    )
+                except TypeError:
+                    return target.generate(
+                        effective_conv_messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
             except Exception:
                 return (
-                    "I need the Groq cloud API credentials to answer this request "
+                    "I need cloud API credentials to answer this request "
                     "with the stronger model, and they are not currently available."
                 )
 
@@ -548,12 +649,20 @@ class MAIOrchestrator:
         elif has_hi:
             prefix = "Hello! "
 
-        # Check capabilities query
-        if any(w in lowered for w in ("what can you do", "capabilities", "how can you help")):
+        # Check capabilities and tools query
+        if any(w in lowered for w in (
+            "what can you do", "capabilities", "how can you help", "tools",
+            "what tools", "features", "implemented", "what are your tools", "what tools do you have"
+        )):
             return (
-                f"{prefix}I'm MAI, your multipurpose AI assistant. I can help with calculations, "
-                "date and time lookups, web searching, reading web pages, managing personal memories, "
-                "and executing multi-step tasks."
+                f"{prefix}I'm MAI, your personal AI assistant. I can help with practical tasks using my currently implemented capabilities:\n"
+                "- Web Search: Finding live information, news, and current events via Tavily.\n"
+                "- Web Fetch: Reading, extracting, and summarizing content from web URLs.\n"
+                "- Calculator: Performing exact arithmetic and mathematical calculations.\n"
+                "- Date & Time: Checking current date, local time, and calendar operations.\n"
+                "- Memory: Remembering and recalling your preferences and profile details (with your confirmation for sensitive writes).\n"
+                "- File Search: Searching allowed local project files.\n"
+                "- Real-Time Voice: Full-duplex voice conversation with streaming speech recognition and synthesis."
             )
 
         # Check AI / identity query
@@ -594,6 +703,13 @@ class MAIOrchestrator:
                 or "updates" in lower
                 or "read " in lower
                 or "explain " in lower
+                or "story" in lower
+                or "poem" in lower
+                or "song" in lower
+                or "lyrics" in lower
+                or "ballad" in lower
+                or "rhyme" in lower
+                or "verse" in lower
             )
         )
         is_complex_reasoning = len(user_message.split()) >= 18
@@ -607,7 +723,31 @@ class MAIOrchestrator:
         memory_context: list[str] | None,
         user_profile: str | None = None,
     ) -> str:
-        max_tok = 800 if self._should_use_cloud_model(user_message, decision) else 300
+        is_creative_or_long = bool(
+            re.search(
+                r"\b(?:story|tale|poem|song|lyrics|ballad|verse|rhyme|anthem|chant|essay|article|paragraphs?|"
+                r"explain\s+in\s+detail|elaborate|narrative|long\s+response|compose|write\s+a\s+(?:song|story|poem|ballad|verse))\b",
+                user_message,
+                re.IGNORECASE,
+            )
+        )
+        max_tok = 1000 if is_creative_or_long else (800 if self._should_use_cloud_model(user_message, decision) else 300)
+        # If self.llm is a ResilientLLMProvider, it coordinates Cloud (Gemini->Groq) -> Local (Ollama)
+        # Calling self.cloud_llm separately would bypass telemetry and cause double-cascading.
+        if hasattr(self.llm, "primary_provider"):
+            try:
+                return self.llm.generate(
+                    messages,
+                    system_prompt=self._system_prompt(memory_context, user_profile),
+                    stage="conversation",
+                    max_tokens=max_tok,
+                )
+            except TypeError:
+                return self.llm.generate(
+                    messages,
+                    system_prompt=self._system_prompt(memory_context, user_profile),
+                )
+
         if self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
             try:
                 try:
@@ -693,8 +833,28 @@ class MAIOrchestrator:
         messages = list(history)
         messages.append({"role": "user", "content": synthesis_prompt})
 
-        # 1. Attempt Cloud LLM if available and suitable
-        if self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
+        # 1. Resilient Provider: if self.llm is ResilientLLMProvider, it coordinates Cloud->Local in a single non-repeating pass
+        if hasattr(self.llm, "primary_provider"):
+            try:
+                try:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="synthesis",
+                        max_tokens=350,
+                    )
+                except TypeError:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
+                if response and response.strip():
+                    return enforce_grounding(response.strip(), tool_output, user_query=user_message)
+            except Exception as e:
+                print(f"Resilient LLM synthesis failed ({e}).")
+
+        # 2. Legacy/Unwrapped: Attempt Cloud LLM if available and suitable
+        elif self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
             try:
                 try:
                     response = self.cloud_llm.generate(
@@ -767,8 +927,28 @@ class MAIOrchestrator:
         messages = list(history)
         messages.append({"role": "user", "content": synthesis_prompt})
 
-        # 1. Attempt Cloud LLM if available and suitable
-        if self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
+        # 1. Resilient Provider: if self.llm is ResilientLLMProvider, it coordinates Cloud->Local in a single non-repeating pass
+        if hasattr(self.llm, "primary_provider"):
+            try:
+                try:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                        stage="synthesis",
+                        max_tokens=600,
+                    )
+                except TypeError:
+                    response = self.llm.generate(
+                        messages,
+                        system_prompt=self._system_prompt(memory_context, user_profile),
+                    )
+                if response and response.strip():
+                    return enforce_grounding(response.strip(), tool_output, user_query=user_message)
+            except Exception as e:
+                print(f"Resilient LLM page synthesis failed ({e}).")
+
+        # 2. Legacy/Unwrapped: Attempt Cloud LLM if available and suitable
+        elif self._should_use_cloud_model(user_message, decision) and self.cloud_llm:
             try:
                 try:
                     response = self.cloud_llm.generate(

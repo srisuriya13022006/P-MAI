@@ -101,7 +101,14 @@ def test_1_assemblyai_selected_as_stt_primary():
 
 def test_2_cloud_llm_selected_as_llm_primary():
     """2. Cloud LLM selected as LLM primary by default."""
-    cfg = Settings(database_url="sqlite://", llm_provider="cloud", groq_api_key="gsk_dummy_test_key_xyz")
+    cfg = Settings(
+        database_url="sqlite://",
+        llm_provider="cloud",
+        cloud_llm_provider="groq",
+        groq_api_key="gsk_dummy_test_key_xyz",
+        gemini_api_key=None,
+        google_api_key=None,
+    )
     provider = create_llm_provider(settings_obj=cfg)
     assert isinstance(provider, ResilientLLMProvider)
     assert provider.primary_provider is not None
@@ -134,7 +141,13 @@ def test_4_missing_assemblyai_key_produces_deterministic_error():
 
 def test_5_missing_cloud_llm_credentials_produces_deterministic_error():
     """5. Missing cloud LLM credentials produce deterministic configuration error when fallback is disabled."""
-    cfg = Settings(database_url="sqlite://", llm_provider="cloud", groq_api_key=None)
+    cfg = Settings(
+        database_url="sqlite://",
+        llm_provider="cloud",
+        groq_api_key=None,
+        gemini_api_key=None,
+        google_api_key=None,
+    )
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(ValueError) as exc_info:
             create_llm_provider(settings_obj=cfg, allow_fallback=False)

@@ -69,9 +69,23 @@ async def run_interactive_acceptance():
         print(f"\n--- Utterance [{u_id}/6]: \"{expected_text}\" ({desc}) ---")
         input(f"Press [ENTER] to START recording, then speak \"{expected_text}\" clearly...")
 
+        # Check connection status and reconnect before turn if needed
+        if not client.is_ws_open:
+            print(f"\n[Client] WebSocket connection was closed. Reconnecting to conversation '{conv_id}'...")
+            reconnected = await client.reconnect()
+            if not reconnected:
+                print("[Client Error] Reconnection failed. Aborting.")
+                return
+            print(f"[Client] Reconnected successfully to conversation '{conv_id}'.")
+
         # 1. Start turn
         device.open_input_stream()
-        await client.start_turn()
+        try:
+            await client.start_turn()
+        except ConnectionError as err:
+            print(f"\n[Client Error] Could not start turn: {err}")
+            continue
+
         t_start = time.perf_counter()
         print("🔴 RECORDING... Speak now! Press [ENTER] when you are finished speaking...", end="", flush=True)
 
@@ -81,7 +95,12 @@ async def run_interactive_acceptance():
         async def stream_mic():
             while not stop_recording.is_set():
                 chunk = device.read_microphone_chunk()
-                await client.send_audio_chunk(chunk)
+                try:
+                    await client.send_audio_chunk(chunk)
+                except ConnectionError as err:
+                    print(f"\n[Warning] Streaming interrupted: {err}")
+                    stop_recording.set()
+                    break
                 await asyncio.sleep(0.08)
 
         mic_task = asyncio.create_task(stream_mic())
@@ -93,7 +112,11 @@ async def run_interactive_acceptance():
 
         t_audio_end = time.perf_counter()
         print(f"\n⏹ Stopped recording ({t_audio_end - t_start:.2f}s). Transcribing via AssemblyAI...")
-        await client.finish_turn()
+        try:
+            await client.finish_turn()
+        except ConnectionError as err:
+            print(f"\n[Client Error] Could not finish turn: {err}")
+            continue
 
         # Collect response
         final_transcript = ""
@@ -103,7 +126,13 @@ async def run_interactive_acceptance():
         audio_chunks_in = 0
 
         while True:
-            raw = await client.ws.recv()
+            try:
+                raw = await client.ws.recv()
+            except websockets.exceptions.ConnectionClosed as exc:
+                print(f"\n   [Server Disconnected]: {exc}")
+                client.is_connected = False
+                break
+
             evt = json.loads(raw)
             etype = evt.get("type")
 
@@ -130,6 +159,11 @@ async def run_interactive_acceptance():
                 response_metadata = evt.get("metadata", {})
                 print(f"   [MAI Response]: \"{mai_response_text}\"")
                 print(f"   [Turnaround]: {(t_end - t_audio_end)*1000:.1f}ms (Total Wall-Clock: {(t_end - t_start):.2f}s)")
+                break
+
+            elif etype == "CLOSE":
+                print(f"\n   [Server Session Closed]: {evt}")
+                client.is_connected = False
                 break
 
             elif etype == "ERROR":

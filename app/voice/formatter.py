@@ -38,7 +38,10 @@ class VoicePresentationFormatter:
         # 3. Inline code backticks: keep identifier, remove backticks
         spoken = re.sub(r"`([^`]+)`", r"\1", spoken)
 
-        # 4. Markdown links: [Link Title](http://...) -> Link Title
+        # 4. Citations: strip bracketed citation references (e.g. [1], [2], [source: ...])
+        spoken = re.sub(r"\[(?:\d+(?:\s*,\s*\d+)*|source:[^\]]+|ref:[^\]]+)\]", "", spoken, flags=re.IGNORECASE)
+
+        # 5. Markdown links: [Link Title](http://...) -> Link Title
         spoken = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", spoken)
 
         # 5. Raw URLs: format to conversational speech (e.g. domain dot org)

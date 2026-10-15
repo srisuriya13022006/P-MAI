@@ -37,8 +37,8 @@ class VoiceConfig:
     vad_max_silence_seconds: float = 2.0
     # Realtime Voice parameters
     realtime_enabled: bool = True
-    realtime_max_session_duration_seconds: float = 300.0
-    realtime_inactivity_timeout_seconds: float = 60.0
+    realtime_max_session_duration_seconds: float = 600.0
+    realtime_inactivity_timeout_seconds: float = 120.0
     realtime_max_utterance_duration_seconds: float = 30.0
     realtime_max_concurrent_sessions: int = 10
     realtime_max_audio_buffer_bytes: int = 2 * 1024 * 1024  # 2MB backpressure limit
@@ -65,31 +65,62 @@ class VoiceConfig:
     stt_local_model: str = "base"
     tts_local_engine: str = "pyttsx3"
 
+    # ElevenLabs Provider Settings (P15.5)
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    elevenlabs_model_id: str = "eleven_v4_turbo"
+    elevenlabs_stability: float = 0.5
+    elevenlabs_similarity_boost: float = 0.75
+    elevenlabs_style: float = 0.0
+    elevenlabs_use_speaker_boost: bool = True
+    elevenlabs_optimize_streaming_latency: int = 3
+    tts_fallback_enabled: bool = True
+    tts_max_segment_chars: int = 1500
+
     def __post_init__(self):
         if self.voice_timeout_seconds is not None:
             self.timeout_seconds = self.voice_timeout_seconds
         if self.tts_voice is not None:
             self.default_voice = self.tts_voice
+        elif (self.tts_provider or "").lower() in ("elevenlabs", "eleven_labs", "eleven"):
+            self.default_voice = self.elevenlabs_voice_id
+            self.tts_voice = self.elevenlabs_voice_id
         else:
             self.tts_voice = self.default_voice
 
     @classmethod
     def from_settings(cls, settings_obj: Any = None) -> "VoiceConfig":
         """Construct VoiceConfig pulling from application settings if available."""
+        import os
         if settings_obj is None:
             from app.core.config import settings
             settings_obj = settings
 
+        resolved_tts_provider = (
+            getattr(settings_obj, "tts_provider", None)
+            or getattr(settings_obj, "voice_tts_provider", None)
+            or os.getenv("TTS_PROVIDER")
+            or os.getenv("VOICE_TTS_PROVIDER")
+            or "local"
+        )
+
+        cfg_voice = getattr(settings_obj, "voice_default_tts_voice", None)
+        if not cfg_voice or cfg_voice == "natural-en-1":
+            if resolved_tts_provider in ("elevenlabs", "eleven_labs", "eleven"):
+                cfg_voice = getattr(settings_obj, "elevenlabs_voice_id", None) or os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+            else:
+                cfg_voice = "natural-en-1"
+
         return cls(
             enabled=getattr(settings_obj, "voice_enabled", True),
             stt_provider=getattr(settings_obj, "voice_stt_provider", "assemblyai"),
-            tts_provider=getattr(settings_obj, "voice_tts_provider", "local"),
+            tts_provider=resolved_tts_provider,
             supported_formats=getattr(settings_obj, "voice_supported_formats", DEFAULT_SUPPORTED_AUDIO_FORMATS),
             max_audio_size_bytes=getattr(settings_obj, "voice_max_audio_size_bytes", 10 * 1024 * 1024),
             max_duration_seconds=getattr(settings_obj, "voice_max_duration_seconds", 60.0),
             timeout_seconds=getattr(settings_obj, "voice_timeout_seconds", 15.0),
             default_language=getattr(settings_obj, "voice_default_language", "en"),
-            default_voice=getattr(settings_obj, "voice_default_tts_voice", "natural-en-1"),
+            default_voice=cfg_voice,
             vad_silence_threshold_db=getattr(settings_obj, "voice_vad_silence_threshold_db", -40.0),
             vad_max_silence_seconds=getattr(settings_obj, "voice_vad_max_silence_seconds", 2.0),
             stt_api_key=getattr(settings_obj, "voice_stt_api_key", None),
@@ -104,4 +135,17 @@ class VoiceConfig:
             stt_fallback_enabled=getattr(settings_obj, "stt_fallback_enabled", True),
             stt_local_model=getattr(settings_obj, "voice_stt_local_model", "base"),
             tts_local_engine=getattr(settings_obj, "voice_tts_local_engine", "pyttsx3"),
+            realtime_max_session_duration_seconds=getattr(settings_obj, "voice_realtime_max_session_duration_seconds", 600.0),
+            realtime_inactivity_timeout_seconds=getattr(settings_obj, "voice_realtime_inactivity_timeout_seconds", 120.0),
+
+            elevenlabs_api_key=getattr(settings_obj, "elevenlabs_api_key", None) or os.getenv("ELEVENLABS_API_KEY"),
+            elevenlabs_voice_id=getattr(settings_obj, "elevenlabs_voice_id", None) or os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+            elevenlabs_model_id=getattr(settings_obj, "elevenlabs_model_id", None) or os.getenv("ELEVENLABS_MODEL_ID", "eleven_v4_turbo"),
+            elevenlabs_stability=float(getattr(settings_obj, "elevenlabs_stability", None) or os.getenv("ELEVENLABS_STABILITY", 0.5)),
+            elevenlabs_similarity_boost=float(getattr(settings_obj, "elevenlabs_similarity_boost", None) or os.getenv("ELEVENLABS_SIMILARITY_BOOST", 0.75)),
+            elevenlabs_style=float(getattr(settings_obj, "elevenlabs_style", None) or os.getenv("ELEVENLABS_STYLE", 0.0)),
+            elevenlabs_use_speaker_boost=bool(getattr(settings_obj, "elevenlabs_use_speaker_boost", True)),
+            elevenlabs_optimize_streaming_latency=int(getattr(settings_obj, "elevenlabs_optimize_streaming_latency", 3)),
+            tts_fallback_enabled=getattr(settings_obj, "tts_fallback_enabled", True),
+            tts_max_segment_chars=int(getattr(settings_obj, "voice_tts_max_segment_chars", None) or os.getenv("VOICE_TTS_MAX_SEGMENT_CHARS", 1500)),
         )

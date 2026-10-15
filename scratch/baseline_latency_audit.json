@@ -1,0 +1,271 @@
+{
+  "timestamp": "2026-10-12T06:14:08Z",
+  "chat_scenarios": [
+    {
+      "scenario": "A. Greeting",
+      "prompt": "Hello.",
+      "total_ms": 2722.17,
+      "response": "Hey there! How can I help you today?",
+      "llm_accounting": {
+        "groq_call_count": 1,
+        "total_calls": 1,
+        "fallback_occurred": false,
+        "total_prompt_tokens": 367,
+        "total_completion_tokens": 41,
+        "total_tokens": 408,
+        "calls": [
+          {
+            "stage": "conversation",
+            "provider": "groq",
+            "model": "openai/gpt-oss-20b",
+            "http_status": "200_OK",
+            "prompt_tokens": 367,
+            "completion_tokens": 41,
+            "total_tokens": 408,
+            "elapsed_ms": 2317.02,
+            "fallback_occurred": false,
+            "fallback_reason": null
+          }
+        ]
+      },
+      "telemetry": {
+        "stage": "conversation",
+        "status": "200_OK",
+        "active_provider": "groq",
+        "active_model": "openai/gpt-oss-20b",
+        "cloud_call_count": 1,
+        "prompt_tokens": 367,
+        "completion_tokens": 41,
+        "total_tokens": 408,
+        "fallback_reason": null,
+        "fallback_provider_latency_ms": null,
+        "total_elapsed_ms": 2317.02
+      }
+    },
+    {
+      "scenario": "B. Identity",
+      "prompt": "What is your name?",
+      "total_ms": 26.0,
+      "response": "I'm MAI, your multipurpose AI assistant.",
+      "llm_accounting": {
+        "groq_call_count": 0,
+        "total_calls": 0,
+        "fallback_occurred": false,
+        "total_prompt_tokens": 0,
+        "total_completion_tokens": 0,
+        "total_tokens": 0,
+        "calls": []
+      },
+      "telemetry": {
+        "stage": "conversation",
+        "status": "200_OK",
+        "active_provider": "groq",
+        "active_model": "openai/gpt-oss-20b",
+        "cloud_call_count": 1,
+        "prompt_tokens": 367,
+        "completion_tokens": 41,
+        "total_tokens": 408,
+        "fallback_reason": null,
+        "fallback_provider_latency_ms": null,
+        "total_elapsed_ms": 2317.02
+      }
+    },
+    {
+      "scenario": "C. Datetime",
+      "prompt": "What time is it?",
+      "total_ms": 39.17,
+      "response": "The current time is 11:43:54 (Asia/Kolkata).",
+      "llm_accounting": {
+        "groq_call_count": 0,
+        "total_calls": 0,
+        "fallback_occurred": false,
+        "total_prompt_tokens": 0,
+        "total_completion_tokens": 0,
+        "total_tokens": 0,
+        "calls": []
+      },
+      "telemetry": {
+        "stage": "conversation",
+        "status": "200_OK",
+        "active_provider": "groq",
+        "active_model": "openai/gpt-oss-20b",
+        "cloud_call_count": 1,
+        "prompt_tokens": 367,
+        "completion_tokens": 41,
+        "total_tokens": 408,
+        "fallback_reason": null,
+        "fallback_provider_latency_ms": null,
+        "total_elapsed_ms": 2317.02
+      }
+    },
+    {
+      "scenario": "D. Conversational LLM",
+      "prompt": "Explain photosynthesis in one sentence.",
+      "total_ms": 1205.4,
+      "response": "Photosynthesis is the process by which green plants use sunlight to convert carb",
+      "llm_accounting": {
+        "groq_call_count": 2,
+        "total_calls": 2,
+        "fallback_occurred": false,
+        "total_prompt_tokens": 2570,
+        "total_completion_tokens": 199,
+        "total_tokens": 2769,
+        "calls": [
+          {
+            "stage": "router",
+            "provider": "groq",
+            "model": "openai/gpt-oss-20b",
+            "http_status": "200_OK",
+            "prompt_tokens": 2120,
+            "completion_tokens": 147,
+            "total_tokens": 2267,
+            "elapsed_ms": 649.39,
+            "fallback_occurred": false,
+            "fallback_reason": null
+          },
+          {
+            "stage": "conversation",
+            "provider": "groq",
+            "model": "openai/gpt-oss-20b",
+            "http_status": "200_OK",
+            "prompt_tokens": 450,
+            "completion_tokens": 52,
+            "total_tokens": 502,
+            "elapsed_ms": 533.98,
+            "fallback_occurred": false,
+            "fallback_reason": null
+          }
+        ]
+      },
+      "telemetry": {
+        "stage": "conversation",
+        "status": "200_OK",
+        "active_provider": "groq",
+        "active_model": "openai/gpt-oss-20b",
+        "cloud_call_count": 3,
+        "prompt_tokens": 450,
+        "completion_tokens": 52,
+        "total_tokens": 502,
+        "fallback_reason": null,
+        "fallback_provider_latency_ms": null,
+        "total_elapsed_ms": 533.98
+      }
+    },
+    {
+      "scenario": "E. Web Search",
+      "prompt": "Search the web for python latest version",
+      "total_ms": 6708.37,
+      "response": "The current stable release of Python is **Python\u202f3.14** \u2013 the major version that",
+      "llm_accounting": {
+        "groq_call_count": 1,
+        "total_calls": 1,
+        "fallback_occurred": false,
+        "total_prompt_tokens": 1405,
+        "total_completion_tokens": 350,
+        "total_tokens": 1755,
+        "calls": [
+          {
+            "stage": "synthesis",
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b",
+            "http_status": "200_OK",
+            "prompt_tokens": 1405,
+            "completion_tokens": 350,
+            "total_tokens": 1755,
+            "elapsed_ms": 1369.17,
+            "fallback_occurred": false,
+            "fallback_reason": null
+          }
+        ]
+      },
+      "telemetry": {
+        "stage": "synthesis",
+        "status": "200_OK",
+        "active_provider": "groq",
+        "active_model": "openai/gpt-oss-120b",
+        "cloud_call_count": 4,
+        "prompt_tokens": 1405,
+        "completion_tokens": 350,
+        "total_tokens": 1755,
+        "fallback_reason": null,
+        "fallback_provider_latency_ms": null,
+        "total_elapsed_ms": 1369.17
+      }
+    },
+    {
+      "scenario": "F. Multi-turn Conversation",
+      "turn_1_ms": 735.1,
+      "turn_2_ms": 1667.98,
+      "total_ms": 2403.08,
+      "response": "I don\u2019t have a secret code saved for you yet. Would you like me to store \u201cALPHA\u2011",
+      "llm_accounting": {
+        "groq_call_count": 2,
+        "total_calls": 2,
+        "fallback_occurred": false,
+        "total_prompt_tokens": 2752,
+        "total_completion_tokens": 336,
+        "total_tokens": 3088,
+        "calls": [
+          {
+            "stage": "router",
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b",
+            "http_status": "200_OK",
+            "prompt_tokens": 2119,
+            "completion_tokens": 159,
+            "total_tokens": 2278,
+            "elapsed_ms": 879.62,
+            "fallback_occurred": false,
+            "fallback_reason": null
+          },
+          {
+            "stage": "conversation",
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b",
+            "http_status": "200_OK",
+            "prompt_tokens": 633,
+            "completion_tokens": 177,
+            "total_tokens": 810,
+            "elapsed_ms": 763.4,
+            "fallback_occurred": false,
+            "fallback_reason": null
+          }
+        ]
+      },
+      "telemetry": {
+        "stage": "conversation",
+        "status": "200_OK",
+        "active_provider": "groq",
+        "active_model": "openai/gpt-oss-120b",
+        "cloud_call_count": 7,
+        "prompt_tokens": 633,
+        "completion_tokens": 177,
+        "total_tokens": 810,
+        "fallback_reason": null,
+        "fallback_provider_latency_ms": null,
+        "total_elapsed_ms": 763.4
+      }
+    }
+  ],
+  "voice_scenario": {
+    "scenario": "G. Voice Interaction",
+    "total_ms": 3070.16,
+    "tts_chunks_count": 118,
+    "stt_latency_ms": 0.02,
+    "mai_latency_ms": 10.92,
+    "tts_latency_ms": 3058.57,
+    "tts_provider": "elevenlabs",
+    "llm_provider": "groq",
+    "runtime_mode": "DEGRADED",
+    "timings": {
+      "t_server_recv_audio_end": 83682.0439972,
+      "t_stt_start": 83682.04434,
+      "t_stt_end": 83682.0443582,
+      "t_agent_start": 83682.0444117,
+      "t_agent_end": 83682.0553288,
+      "t_tts_start": 83682.0553491,
+      "t_first_tts_chunk": 83683.3543442,
+      "t_tts_end": 83685.1139221
+    }
+  }
+}

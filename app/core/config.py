@@ -7,7 +7,9 @@ class Settings(BaseSettings):
     app_name: str = "MAI"
 
     ollama_base_url: str = "http://localhost:11434"
+    ollama_num_ctx: int = 4096
     local_model: str = "qwen3:4b"
+    local_llm_reserved_response_tokens: int = 512
     cloud_model: str = "openai/gpt-oss-20b"
     cloud_fallback_models: list[str] | str = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
 
@@ -25,13 +27,34 @@ class Settings(BaseSettings):
             return [m.strip() for m in v.split(",") if m.strip()]
         return v
 
+    # Gemini LLM Settings (P15.7 Quota-Aware Multi-Model Pool)
+    gemini_api_key: str | None = None
+    google_api_key: str | None = None
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_model_pool: list[str] | str = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    gemini_fallback_models: list[str] | str = ["gemini-3.1-flash-lite"]
+
+    @field_validator("gemini_model_pool", "gemini_fallback_models")
+    @classmethod
+    def parse_gemini_models_list(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            import json
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+            return [m.strip() for m in v.split(",") if m.strip()]
+        return v
+
     use_cloud_fallback: bool = True
     groq_api_key: str | None = None
     tavily_api_key: str | None = None
 
-    # LLM Provider Configuration (P15.4 Cloud-First)
+    # LLM Provider Configuration (P15.4 / P15.5 Cloud-First Multi-Provider)
     llm_provider: str = "cloud"  # 'cloud' (primary) or 'ollama' / 'local'
-    cloud_llm_provider: str = "groq"
+    cloud_llm_provider: str = "auto"  # 'auto' (prefers gemini, fails over to groq), 'gemini', or 'groq'
     llm_fallback_enabled: bool = True
 
     database_url: str
@@ -79,6 +102,17 @@ class Settings(BaseSettings):
     # Local-First Voice Settings (P14)
     voice_stt_local_model: str = "base"
     voice_tts_local_engine: str = "pyttsx3"
+
+    # ElevenLabs Voice Settings (P15.5)
+    tts_provider: str | None = None  # Direct alias for TTS_PROVIDER env var
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    elevenlabs_model_id: str = "eleven_v4_turbo"
+    elevenlabs_stability: float = 0.5
+    elevenlabs_similarity_boost: float = 0.75
+    elevenlabs_style: float = 0.0
+    elevenlabs_use_speaker_boost: bool = True
+    tts_fallback_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

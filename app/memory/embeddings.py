@@ -52,15 +52,26 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
 class EmbeddingProviderFactory:
     """Creates the preferred embedding provider while preserving a local fallback."""
 
-    @staticmethod
-    def create(model_name: str | None = None, host: str | None = None) -> EmbeddingProvider:
+    _cached_instance: EmbeddingProvider | None = None
+    _cached_key: tuple[str, str | None] | None = None
+
+    @classmethod
+    def create(cls, model_name: str | None = None, host: str | None = None) -> EmbeddingProvider:
         preferred_model = model_name or "nomic-embed-text"
+        key = (preferred_model, host)
+        if cls._cached_instance is not None and cls._cached_key == key:
+            return cls._cached_instance
+
         try:
             provider = OllamaEmbeddingProvider(model=preferred_model, host=host)
             provider.embed("health-check")
+            cls._cached_instance = provider
+            cls._cached_key = key
             return provider
         except Exception:
-            return LocalHashEmbeddingProvider()
+            cls._cached_instance = LocalHashEmbeddingProvider()
+            cls._cached_key = key
+            return cls._cached_instance
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:

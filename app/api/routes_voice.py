@@ -4,7 +4,10 @@ Exposes POST /voice/chat for audio turnaround without exposing internal engine i
 """
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse
+import asyncio
+import logging
 import os
+import time
 from sqlalchemy.orm import Session
 from typing import Any
 
@@ -21,12 +24,16 @@ from app.voice.exceptions import (
     EmptyAudioError,
     EmptyTranscriptionError,
     InvalidAudioError,
+    SessionExpiredError,
+    SessionInactivityTimeoutError,
     STTTimeoutError,
     STTUnavailableError,
     UnsupportedAudioFormatError,
     VoiceDisabledError,
     VoiceError,
 )
+
+logger = logging.getLogger("app.voice.routes")
 from app.voice.pipeline import VoicePipeline
 from app.voice.realtime_pipeline import RealtimeVoicePipeline
 from app.voice.schemas import VoiceChatRequest, VoiceChatResponse
@@ -139,9 +146,28 @@ async def websocket_realtime_voice(
             conversation_id=conversation_id,
             user_id=user_id,
         )
+        logger.info(
+            "WebSocket session created: session_id=%s, conversation_id=%s, user_id=%s",
+            session.session_id, conversation_id, user_id,
+        )
 
         while True:
-            text_data = await websocket.receive_text()
+            try:
+                # Proactively enforce idle inactivity timeout and session lifetime bounds
+                now = time.time()
+                idle = now - session.last_activity_at
+                remaining = session.config.realtime_inactivity_timeout_seconds - idle
+                if remaining <= 0:
+                    session.check_bounds()
+
+                wait_slice = max(0.2, min(remaining, 5.0))
+                text_data = await asyncio.wait_for(websocket.receive_text(), timeout=wait_slice)
+            except asyncio.TimeoutError:
+                session.check_bounds()
+                continue
+            except WebSocketDisconnect:
+                raise
+
             try:
                 client_event = RealtimeClientEvent.model_validate_json(text_data)
             except Exception as parse_err:
@@ -154,26 +180,105 @@ async def websocket_realtime_voice(
                 await websocket.send_text(err_event.model_dump_json())
                 continue
 
+            if client_event.type != RealtimeEventType.AUDIO_CHUNK:
+                logger.info(
+                    "WebSocket client event: session_id=%s, turn=%s, event_type=%s, session_status=%s",
+                    session.session_id, session.current_turn, client_event.type.value, session.status.value,
+                )
+
             async for server_event in pipeline.handle_client_event(session, client_event):
                 await websocket.send_text(server_event.model_dump_json())
+                if server_event.type in (
+                    RealtimeEventType.SPEECH_START,
+                    RealtimeEventType.SPEECH_END,
+                    RealtimeEventType.RESPONSE_START,
+                    RealtimeEventType.RESPONSE_END,
+                    RealtimeEventType.ERROR,
+                    RealtimeEventType.CLOSE,
+                ):
+                    logger.info(
+                        "WebSocket server event: session_id=%s, turn=%s, event_type=%s, session_status=%s",
+                        session.session_id, session.current_turn, server_event.type.value, session.status.value,
+                    )
                 if server_event.type == RealtimeEventType.CLOSE:
-                    await websocket.close()
+                    logger.info(
+                        "WebSocket closing per CLOSE event: session_id=%s, turn=%s",
+                        session.session_id, session.current_turn,
+                    )
+                    await websocket.close(code=1000)
                     return
 
-    except WebSocketDisconnect:
-        if session:
-            pipeline.session_manager.close_session(session.session_id)
-    except Exception as exc:
+    except (SessionInactivityTimeoutError, SessionExpiredError) as timeout_exc:
+        sess_id = session.session_id if session else "unknown"
+        turn_idx = session.current_turn if session else 0
+        last_status = session.status.value if session else "CLOSED"
+        err_code = "SESSION_INACTIVITY_TIMEOUT" if isinstance(timeout_exc, SessionInactivityTimeoutError) else "SESSION_EXPIRED"
+        logger.warning(
+            "WebSocket session boundary reached: session_id=%s, conversation_id=%s, turn=%s, last_state=%s, error=%s",
+            sess_id, conversation_id, turn_idx, last_status, err_code,
+        )
         if session:
             pipeline.session_manager.close_session(session.session_id)
         try:
             err_event = RealtimeServerEvent(
                 type=RealtimeEventType.ERROR,
-                session_id=session.session_id if session else "unknown",
+                session_id=sess_id,
+                turn_index=turn_idx,
+                error_code=err_code,
+                error_message=str(timeout_exc),
+            )
+            await websocket.send_text(err_event.model_dump_json())
+            close_event = RealtimeServerEvent(
+                type=RealtimeEventType.CLOSE,
+                session_id=sess_id,
+                turn_index=turn_idx,
+                metadata={"reason": err_code.lower()},
+            )
+            await websocket.send_text(close_event.model_dump_json())
+            await websocket.close(code=1000)
+        except Exception:
+            pass
+
+    except WebSocketDisconnect as disc:
+        sess_id = session.session_id if session else "unknown"
+        turn_idx = session.current_turn if session else 0
+        last_status = session.status.value if session else "CLOSED"
+        close_code = getattr(disc, "code", 1000)
+        close_reason = getattr(disc, "reason", None) or "client_disconnect"
+        logger.info(
+            "WebSocket client disconnected: session_id=%s, conversation_id=%s, turn=%s, last_state=%s, close_code=%s, reason=%s",
+            sess_id, conversation_id, turn_idx, last_status, close_code, close_reason,
+        )
+        if session:
+            pipeline.session_manager.close_session(session.session_id)
+
+    except Exception as exc:
+        sess_id = session.session_id if session else "unknown"
+        turn_idx = session.current_turn if session else 0
+        last_status = session.status.value if session else "CLOSED"
+        logger.error(
+            "WebSocket unexpected exception: session_id=%s, conversation_id=%s, turn=%s, last_state=%s, error_type=%s, error_msg=%s",
+            sess_id, conversation_id, turn_idx, last_status, type(exc).__name__, exc,
+            exc_info=True,
+        )
+        if session:
+            pipeline.session_manager.close_session(session.session_id)
+        try:
+            err_event = RealtimeServerEvent(
+                type=RealtimeEventType.ERROR,
+                session_id=sess_id,
+                turn_index=turn_idx,
                 error_code="INTERNAL_REALTIME_ERROR",
                 error_message=str(exc),
             )
             await websocket.send_text(err_event.model_dump_json())
-            await websocket.close()
+            close_event = RealtimeServerEvent(
+                type=RealtimeEventType.CLOSE,
+                session_id=sess_id,
+                turn_index=turn_idx,
+                metadata={"reason": "internal_error"},
+            )
+            await websocket.send_text(close_event.model_dump_json())
+            await websocket.close(code=1011)
         except Exception:
             pass

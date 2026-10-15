@@ -13,7 +13,7 @@ from app.agent.task_state import ActiveTaskState
 
 @dataclass
 class ReferenceResolutionResult:
-    """Outcome of resolving references in a user message against active task state."""
+    """Outcome of resolving references in a user message against active task state or conversation context."""
 
     resolved_message: str
     resolved_arguments: dict[str, Any] = field(default_factory=dict)
@@ -26,6 +26,9 @@ class ReferenceResolutionResult:
     clarification_reason: ClarificationReason | None = None
     candidate_options: list[str] = field(default_factory=list)
     missing_information: str | None = None
+    contextual_followup_type: str | None = None
+    original_question: str | None = None
+    preceding_assistant_response: str | None = None
 
 
 # Explicit task cancellation patterns (separate from long-term memory deletion)
@@ -39,6 +42,75 @@ CONTINUATION_PATTERN = re.compile(
     r"^(?:continue(?:\s+the(?:\s+task)?)?|resume(?:\s+task)?|proceed|go\s+on)[.!?]?$",
     re.IGNORECASE,
 )
+
+# Semantic conversational follow-up patterns
+DIRECT_ANSWER_PATTERNS = (
+    r"^(?:(?:hey|please|just|now|so)\s*,?\s*)?(?:answer|reply(?:\s+to)?)(?:\s+(?:the|my))?\s+question[.!?]?$",
+    r"^(?:(?:hey|please|just)\s*,?\s*)?answer\s+directly[.!?]?$",
+    r"^(?:(?:hey|please|just)\s*,?\s*)?answer\s+me[.!?]?$",
+    r"^(?:you\s+(?:didn't|did\s+not|haven't|have\s+not)\s+answer(?:ed)?(?:\s+(?:the|my))?\s+question)[.!?]?$",
+    r"^answer\s+(?:what\s+i\s+asked|yes\s+or\s+no)[.!?]?$",
+    r"^just\s+answer[.!?]?$",
+)
+
+EXPLAIN_PATTERNS = (
+    r"^(?:(?:and\s+)?what\s+do\s+you\s+mean|what\s+does\s+that\s+mean)[.!?]?$",
+    r"^(?:(?:please\s+)?explain\s+(?:that|this|why)|why\s+is\s+that)[.!?]?$",
+    r"^(?:what\s+are\s+you\s+saying)[.!?]?$",
+)
+
+ELABORATE_PATTERNS = (
+    r"^(?:(?:please\s+)?tell\s+me\s+more|elaborate|can\s+you\s+elaborate|more\s+details)(?:\s+on\s+that)?[.!?]?$",
+    r"^(?:go\s+deeper|expand\s+on\s+that)[.!?]?$",
+)
+
+PIVOT_PATTERNS = (
+    r"^(?:what\s+about\s+you|and\s+you|how\s+about\s+you|where\s+do\s+you\s+stand)[.!?]?$",
+)
+
+COMPARE_DIRECTLY_PATTERNS = (
+    r"^(?:(?:please\s+)?compare\s+(?:them|both)(?:\s+directly)?|compare\s+directly)[.!?]?$",
+    r"^(?:which\s+one\s+is\s+(?:better|more\s+capable)|who\s+is\s+(?:better|more\s+capable))(?:\s+then)?[.!?]?$",
+)
+
+REPEAT_PATTERNS = (
+    r"^(?:please\s+)?(?:read|repeat|say)(?:\s+(?:it|that|this))?(?:\s+again)?[.!?]?$",
+    r"^(?:can\s+you\s+)?(?:read|repeat|say)(?:\s+(?:it|that|this))?(?:\s+again)?[.!?]?$",
+    r"^what\s+did\s+you\s+(?:just\s+)?say[.!?]?$",
+    r"^repeat(?:\s+the\s+last\s+(?:answer|response|result))?[.!?]?$",
+)
+
+
+def extract_recent_conversation_context(
+    user_message: str,
+    conversation_messages: list[dict[str, str]] | None,
+) -> tuple[str | None, str | None]:
+    """
+    Returns (last_user_message, last_assistant_message) preceding the current turn.
+    """
+    if not conversation_messages:
+        return None, None
+
+    msgs = list(conversation_messages)
+    # If the last message is a user message (current turn or latest user prompt), pop it to look at previous turn pair
+    if msgs and msgs[-1].get("role") == "user":
+        msgs = msgs[:-1]
+
+    last_assistant = None
+    last_user = None
+
+    for m in reversed(msgs):
+        role = m.get("role")
+        content = m.get("content", "").strip()
+        if not content:
+            continue
+        if role == "assistant" and last_assistant is None:
+            last_assistant = content
+        elif role == "user" and last_assistant is not None and last_user is None:
+            last_user = content
+            break
+
+    return last_user, last_assistant
 
 
 def is_cancellation_command(message: str) -> bool:
@@ -54,9 +126,10 @@ def is_continuation_command(message: str) -> bool:
 def resolve_task_reference(
     user_message: str,
     active_task: ActiveTaskState | None,
+    conversation_messages: list[dict[str, str]] | None = None,
 ) -> ReferenceResolutionResult:
     """
-    Resolve follow-up references using ActiveTaskState when unambiguous.
+    Resolve follow-up references using ActiveTaskState and recent conversation context.
     If reference is ambiguous, asks a clarification question and never guesses.
     """
     stripped = user_message.strip()
@@ -97,6 +170,127 @@ def resolve_task_reference(
             resolved_message=active_task.original_user_goal,
             is_continuation=True,
             is_reference_resolved=True,
+        )
+
+    # 3. Check for Conversational Follow-Up intents (using conversation_messages)
+    last_user, last_assistant = extract_recent_conversation_context(stripped, conversation_messages)
+
+    # 3a. Direct Answer Demand ("Answer the question", "Answer directly", "You didn't answer my question")
+    if any(bool(re.match(p, lowered)) for p in DIRECT_ANSWER_PATTERNS):
+        if last_user:
+            return ReferenceResolutionResult(
+                resolved_message=f"Answer directly: {last_user}",
+                is_reference_resolved=True,
+                contextual_followup_type="direct_answer",
+                original_question=last_user,
+                preceding_assistant_response=last_assistant,
+            )
+        return ReferenceResolutionResult(
+            resolved_message=stripped,
+            needs_clarification=True,
+            clarification_reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+            missing_information="target_question",
+            clarification_prompt="Which question would you like me to answer? Please ask me directly.",
+        )
+
+    # 3b. Explanation Request ("What do you mean?", "Explain that", "Why is that?")
+    if any(bool(re.match(p, lowered)) for p in EXPLAIN_PATTERNS):
+        if last_assistant:
+            snippet = last_assistant.split(".")[0].strip() if "." in last_assistant else last_assistant[:120].strip()
+            return ReferenceResolutionResult(
+                resolved_message=f"Explain what you meant by: {snippet}",
+                is_reference_resolved=True,
+                contextual_followup_type="explain",
+                original_question=last_user,
+                preceding_assistant_response=last_assistant,
+            )
+        return ReferenceResolutionResult(
+            resolved_message=stripped,
+            needs_clarification=True,
+            clarification_reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+            missing_information="explanation_target",
+            clarification_prompt="What would you like me to explain?",
+        )
+
+    # 3c. Elaboration / Tell Me More ("Tell me more", "Elaborate")
+    if any(bool(re.match(p, lowered)) for p in ELABORATE_PATTERNS):
+        if not active_task or active_task.is_expired():
+            if last_user or last_assistant:
+                topic = last_user or (last_assistant.split(".")[0].strip() if "." in last_assistant else last_assistant[:80].strip())
+                return ReferenceResolutionResult(
+                    resolved_message=f"Tell me more about: {topic}",
+                    is_reference_resolved=True,
+                    contextual_followup_type="elaborate",
+                    original_question=last_user,
+                    preceding_assistant_response=last_assistant,
+                )
+            return ReferenceResolutionResult(
+                resolved_message=stripped,
+                needs_clarification=True,
+                clarification_reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+                missing_information="elaboration_topic",
+                clarification_prompt="What would you like me to tell you more about?",
+            )
+
+    # 3d. Pivot to MAI ("What about you?", "And you?", "How about you?")
+    if any(bool(re.match(p, lowered)) for p in PIVOT_PATTERNS):
+        if last_user or last_assistant:
+            topic = last_user or (last_assistant.split(".")[0].strip() if "." in last_assistant else last_assistant[:80].strip())
+            return ReferenceResolutionResult(
+                resolved_message=f"What about you, MAI? In relation to: {topic}",
+                is_reference_resolved=True,
+                contextual_followup_type="pivot",
+                original_question=last_user,
+                preceding_assistant_response=last_assistant,
+            )
+        return ReferenceResolutionResult(
+            resolved_message=stripped,
+            needs_clarification=True,
+            clarification_reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+            missing_information="pivot_topic",
+            clarification_prompt="Could you clarify what you are asking about me?",
+        )
+
+    # 3e. Direct Comparison Request ("Compare them directly", "Compare directly")
+    if any(bool(re.match(p, lowered)) for p in COMPARE_DIRECTLY_PATTERNS):
+        if last_user or last_assistant:
+            topic = last_user or (last_assistant.split(".")[0].strip() if "." in last_assistant else last_assistant[:80].strip())
+            return ReferenceResolutionResult(
+                resolved_message=f"Compare them directly: {topic}",
+                is_reference_resolved=True,
+                contextual_followup_type="compare",
+                original_question=last_user,
+                preceding_assistant_response=last_assistant,
+            )
+        return ReferenceResolutionResult(
+            resolved_message=stripped,
+            needs_clarification=True,
+            clarification_reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+            missing_information="comparison_entities",
+            clarification_prompt="Which items would you like me to compare directly?",
+        )
+
+    # 3f. Repetition / Read Again ("Read it again", "Repeat that", "What did you just say?")
+    if any(bool(re.match(p, lowered)) for p in REPEAT_PATTERNS):
+        prior_text = last_assistant
+        if not prior_text and active_task:
+            ctx = active_task.context_values
+            prior_text = ctx.get("last_answer") or ctx.get("last_output")
+            if not prior_text and active_task.completed_steps:
+                prior_text = active_task.completed_steps[-1].output_text
+        if prior_text:
+            return ReferenceResolutionResult(
+                resolved_message=prior_text,
+                is_reference_resolved=True,
+                is_continuation=True,
+                target_tool="repeat",
+            )
+        return ReferenceResolutionResult(
+            resolved_message=stripped,
+            needs_clarification=True,
+            clarification_reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+            missing_information="repeat_target",
+            clarification_prompt="There is nothing from our recent conversation to repeat. What would you like to know?",
         )
 
     # If no active task exists, fast-path return unmodified message

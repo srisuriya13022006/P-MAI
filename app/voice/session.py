@@ -54,6 +54,7 @@ VALID_SESSION_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
     },
     SessionStatus.PROCESSING: {
         SessionStatus.SPEAKING,
+        SessionStatus.LISTENING,
         SessionStatus.INTERRUPTED,
         SessionStatus.IDLE,
         SessionStatus.CLOSED,
@@ -102,6 +103,10 @@ class RealtimeVoiceSession:
         """Enforce strict, deterministic state machine transitions."""
         if self.status == SessionStatus.CLOSED:
             raise SessionClosedError(self.session_id)
+
+        if self.status == new_status:
+            self.touch()
+            return
 
         allowed = VALID_SESSION_TRANSITIONS.get(self.status, set())
         if new_status not in allowed:

@@ -101,6 +101,14 @@ class ChatService:
                 },
             )
 
+        # Apply prompt budget to conversation history to prevent unbounded token accumulation
+        from app.llm.prompt_budget import budget_messages
+        llm_messages, _, _ = budget_messages(
+            messages=llm_messages,
+            system_prompt=None,
+            max_prompt_tokens=2800,
+        )
+
         is_self_id = is_self_identity_query(user_message)
         is_dt_query = is_pure_datetime_query(user_message)
         is_calc_query = is_pure_calculator_query(user_message)

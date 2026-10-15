@@ -46,10 +46,12 @@ from app.voice.stt.streaming import (
 from app.voice.tts.base import TextToSpeechProvider
 from app.voice.tts.factory import create_tts_provider
 from app.voice.tts.mock import MockTTSProvider
+from app.voice.tts.preprocessor import SpeechTextPreprocessor
 from app.voice.tts.streaming import (
     MockStreamingTTSProvider,
     StreamingTextToSpeechProvider,
 )
+
 from app.voice.vad.base import VoiceActivityDetector
 from app.voice.vad.detector import EnergyVADDetector
 
@@ -75,6 +77,7 @@ class RealtimeVoicePipeline:
 
         self.session_manager = session_manager or VoiceSessionManager(self.config)
         self.formatter = VoicePresentationFormatter()
+        self.preprocessor = SpeechTextPreprocessor()
         self.normalizer = AudioNormalizer()
 
         self.stt_provider = stt_provider or self._resolve_stt_provider()
@@ -126,8 +129,8 @@ class RealtimeVoicePipeline:
         # 1. AUDIO_START
         # -------------------------------------------------------------
         if event.type == RealtimeEventType.AUDIO_START:
-            # Check for barge-in if currently speaking
-            if session.status == SessionStatus.SPEAKING:
+            # Check for barge-in if currently speaking or processing
+            if session.status in (SessionStatus.SPEAKING, SessionStatus.PROCESSING):
                 session.is_interrupted = True
                 session.interruption_count += 1
                 session.transition_to(SessionStatus.INTERRUPTED)
@@ -167,8 +170,8 @@ class RealtimeVoicePipeline:
             except (binascii.Error, ValueError) as err:
                 raise MalformedRealtimeEventError(f"Malformed audio chunk base64: {err}")
 
-            # Barge-in detection during speaking
-            if session.status == SessionStatus.SPEAKING:
+            # Barge-in detection during speaking or processing
+            if session.status in (SessionStatus.SPEAKING, SessionStatus.PROCESSING):
                 session.is_interrupted = True
                 session.interruption_count += 1
                 session.transition_to(SessionStatus.INTERRUPTED)
@@ -331,27 +334,23 @@ class RealtimeVoicePipeline:
             mai_end = time.perf_counter()
             mai_latency_ms = round((mai_end - mai_start) * 1000.0, 2)
             session.current_response_text = grounded_response
+            session.touch()
 
             # Stream TTS Output
             session.transition_to(SessionStatus.SPEAKING)
             tts_start = time.perf_counter()
             t_first_tts_chunk = None
             chunk_index = 0
+            total_audio_bytes = 0
 
             try:
-                formatted_speech = self.formatter.format_for_speech(grounded_response)
-                if len(formatted_speech) > 450:
-                    sentences = re.split(r"(?<=[.!?])\s+", formatted_speech)
-                    shortened = []
-                    curr_len = 0
-                    for s in sentences:
-                        shortened.append(s)
-                        curr_len += len(s)
-                        if curr_len >= 300:
-                            break
-                    speech_to_synthesize = " ".join(shortened)
-                else:
-                    speech_to_synthesize = formatted_speech
+                prep = self.preprocessor.preprocess(
+                    grounded_response,
+                    target_provider=getattr(self.tts_provider, "provider_name", "local"),
+                    model_id=getattr(self.config, "elevenlabs_model_id", "eleven_v4_turbo"),
+                    max_segment_chars=getattr(self.config, "tts_max_segment_chars", 1500),
+                )
+                speech_to_synthesize = prep.expressive_text
 
                 if isinstance(self.tts_provider, StreamingTextToSpeechProvider):
                     async for tts_chunk in self.tts_provider.synthesize_stream(
@@ -364,31 +363,42 @@ class RealtimeVoicePipeline:
                         if session.is_interrupted or session.status == SessionStatus.INTERRUPTED:
                             break
 
+                        # Keep session alive during long speech playback
+                        session.touch()
+
                         if t_first_tts_chunk is None:
                             t_first_tts_chunk = time.perf_counter()
 
                         chunk_index += 1
+                        chunk_len = len(tts_chunk.audio_bytes)
+                        total_audio_bytes += chunk_len
+
                         yield RealtimeServerEvent(
                             type=RealtimeEventType.RESPONSE_CHUNK,
                             session_id=session.session_id,
                             turn_index=session.current_turn,
                             audio_base64=base64.b64encode(tts_chunk.audio_bytes).decode("ascii"),
-                            metadata={"chunk_index": chunk_index},
+                            metadata={
+                                "chunk_index": chunk_index,
+                                "bytes": chunk_len,
+                            },
                         )
                 else:
                     tts_res = await self.tts_provider.synthesize(
-                        text=formatted_speech,
+                        text=speech_to_synthesize,
                         voice=self.config.default_voice,
                         language=self.config.default_language,
                     )
                     t_first_tts_chunk = time.perf_counter()
                     if not session.is_interrupted and session.status == SessionStatus.SPEAKING:
+                        chunk_index = 1
+                        total_audio_bytes = len(tts_res.audio_bytes)
                         yield RealtimeServerEvent(
                             type=RealtimeEventType.RESPONSE_CHUNK,
                             session_id=session.session_id,
                             turn_index=session.current_turn,
                             audio_base64=base64.b64encode(tts_res.audio_bytes).decode("ascii"),
-                            metadata={"chunk_index": 1},
+                            metadata={"chunk_index": 1, "bytes": total_audio_bytes},
                         )
             except (TTSError, Exception) as tts_err:
                 # TTS failure is non-fatal: preserve grounded text response
@@ -404,7 +414,7 @@ class RealtimeVoicePipeline:
             tts_latency_ms = round((tts_end - tts_start) * 1000.0, 2)
 
             # If not interrupted, emit RESPONSE_END with final grounded text
-            if not session.is_interrupted and session.status == SessionStatus.SPEAKING:
+            if not session.is_interrupted and session.status in (SessionStatus.SPEAKING, SessionStatus.PROCESSING):
                 from app.core.runtime_mode import determine_runtime_mode
                 stt_prov = getattr(self.stt_provider, "provider_name", "assemblyai")
                 stt_md = getattr(self.stt_provider, "stt_mode", "CLOUD" if stt_prov in ("assemblyai", "whisper", "groq", "openai") else "LOCAL_FALLBACK")
@@ -416,6 +426,11 @@ class RealtimeVoicePipeline:
 
                 llm_accounting = getattr(llm_obj, "get_turn_accounting", lambda: {})() if llm_obj else {}
                 stt_model_name = getattr(stt_res, "model_name", None) or getattr(self.stt_provider, "model_name", "universal-3-6-pro")
+                session.touch()
+
+                text_paragraphs = len([p for p in grounded_response.split("\n\n") if p.strip()]) or 1
+                speech_paragraphs = len([p for p in prep.clean_spoken_text.split("\n\n") if p.strip()]) or 1
+                approx_duration_s = round(total_audio_bytes / 32000.0, 2)
 
                 yield RealtimeServerEvent(
                     type=RealtimeEventType.RESPONSE_END,
@@ -429,9 +444,25 @@ class RealtimeVoicePipeline:
                         "stt_model": stt_model_name,
                         "mai_latency_ms": mai_latency_ms,
                         "tts_latency_ms": tts_latency_ms,
+                        "tts_provider": getattr(self.tts_provider, "provider_name", "local"),
+                        "tts_tone": getattr(prep, "detected_tone", "neutral") if 'prep' in locals() else "neutral",
+                        "tts_audio_tag": getattr(prep, "audio_tag", None) if 'prep' in locals() else None,
                         "runtime_mode": rt_mode,
                         "llm_provider": llm_prov,
                         "llm_accounting": llm_accounting,
+                        "text_chars": len(grounded_response),
+                        "text_paragraphs": text_paragraphs,
+                        "speech_chars": len(prep.clean_spoken_text) if 'prep' in locals() else len(grounded_response),
+                        "speech_paragraphs": speech_paragraphs,
+                        "synthesis_segments": len(getattr(prep, "segments", [])) or 1,
+                        "total_audio_chunks": chunk_index,
+                        "total_audio_bytes": total_audio_bytes,
+                        "approx_duration_seconds": approx_duration_s,
+                        "stages": {
+                            "text_generation_completed": True,
+                            "audio_synthesis_completed": chunk_index > 0 or total_audio_bytes > 0,
+                            "audio_delivery_completed": True,
+                        },
                         "timings": {
                             "t_server_recv_audio_end": t_server_recv_audio_end,
                             "t_stt_start": t_stt_start,

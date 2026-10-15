@@ -146,7 +146,7 @@ class ResilientLLMProvider:
                 retry_after = getattr(self.primary_provider, "last_retry_after", None)
 
                 # If 429 and retry_after guidance is tiny (<= 0.5s), honor retry once
-                if category == CloudErrorCategory.RATE_LIMIT and retry_after is not None and 0 < retry_after <= 0.5:
+                if category == CloudErrorCategory.RATE_LIMIT and isinstance(retry_after, (int, float)) and 0 < retry_after <= 0.5:
                     logger.info("Honoring small provider retry guidance: sleeping %.2fs before one retry", retry_after)
                     time.sleep(retry_after)
                     try:
@@ -230,12 +230,39 @@ class ResilientLLMProvider:
         # 2. Local Fallback Provider
         if self.fallback_provider is not None:
             self.fallback_call_count += 1
+            fb_start = time.perf_counter()
+            fb_limit = getattr(self.fallback_provider, "context_limit", 4096)
+            reserved = max_tokens or 512
+            fb_prompt_budget = max(400, fb_limit - reserved)
+
+            from app.llm.prompt_budget import budget_messages
+            fb_messages, fb_system, _ = budget_messages(
+                messages=messages,
+                system_prompt=system_prompt,
+                max_prompt_tokens=fb_prompt_budget,
+                reserved_response_tokens=reserved,
+            )
+
             try:
-                fb_start = time.perf_counter()
                 try:
-                    res = self.fallback_provider.generate(messages, system_prompt=system_prompt, max_tokens=max_tokens)
+                    res = self.fallback_provider.generate(
+                        fb_messages,
+                        system_prompt=fb_system,
+                        max_tokens=max_tokens,
+                        stage=stage,
+                    )
                 except TypeError:
-                    res = self.fallback_provider.generate(messages, system_prompt=system_prompt)
+                    try:
+                        res = self.fallback_provider.generate(
+                            fb_messages,
+                            system_prompt=fb_system,
+                            max_tokens=max_tokens,
+                        )
+                    except TypeError:
+                        res = self.fallback_provider.generate(
+                            fb_messages,
+                            system_prompt=fb_system,
+                        )
                 fb_ms = round((time.perf_counter() - fb_start) * 1000.0, 2)
                 total_ms = round((time.perf_counter() - start) * 1000.0, 2)
                 self.last_latency_ms = total_ms
@@ -281,13 +308,81 @@ class ResilientLLMProvider:
                 )
                 return res
             except Exception as fb_err:
+                from app.llm.ollama_provider import is_context_overflow_error
+                if is_context_overflow_error(fb_err):
+                    logger.warning(
+                        "Fallback provider %s overflowed context during fallback. Applying emergency reduction...",
+                        getattr(self.fallback_provider, "provider_name", "local"),
+                    )
+                    emergency_messages, emergency_system, _ = budget_messages(
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        max_prompt_tokens=max(300, int(fb_limit * 0.5)),
+                        reserved_response_tokens=reserved,
+                        emergency_reduction=True,
+                    )
+                    try:
+                        try:
+                            res = self.fallback_provider.generate(
+                                emergency_messages,
+                                system_prompt=emergency_system,
+                                max_tokens=max_tokens,
+                            )
+                        except TypeError:
+                            res = self.fallback_provider.generate(
+                                emergency_messages,
+                                system_prompt=emergency_system,
+                            )
+                        fb_ms = round((time.perf_counter() - fb_start) * 1000.0, 2)
+                        total_ms = round((time.perf_counter() - start) * 1000.0, 2)
+                        self.last_latency_ms = total_ms
+                        self.last_provider_used = self.fallback_provider.provider_name
+                        fb_record = {
+                            "stage": stage,
+                            "provider": self.fallback_provider.provider_name,
+                            "model": getattr(self.fallback_provider, "model", "unknown"),
+                            "http_status": "200_OK",
+                            "prompt_tokens": None,
+                            "completion_tokens": None,
+                            "total_tokens": None,
+                            "elapsed_ms": fb_ms,
+                            "fallback_occurred": True,
+                            "fallback_reason": fallback_reason,
+                        }
+                        self.turn_records.append(fb_record)
+                        return res
+                    except Exception as retry_err:
+                        self.runtime_mode = "OFFLINE"
+                        logger.error(
+                            "Local fallback LLM %s context recovery failed (%s). System is OFFLINE.",
+                            getattr(self.fallback_provider, "provider_name", "local"),
+                            type(retry_err).__name__,
+                        )
+                        fb_record = {
+                            "stage": stage,
+                            "provider": self.fallback_provider.provider_name,
+                            "model": getattr(self.fallback_provider, "model", "unknown"),
+                            "http_status": "ERROR_CONTEXT_OVERFLOW",
+                            "prompt_tokens": None,
+                            "completion_tokens": None,
+                            "total_tokens": None,
+                            "elapsed_ms": round((time.perf_counter() - fb_start) * 1000.0, 2),
+                            "fallback_occurred": True,
+                            "fallback_reason": fallback_reason,
+                        }
+                        self.turn_records.append(fb_record)
+                        return (
+                            "The conversation has exceeded the local model's available context memory. "
+                            "Please ask a more focused question or start a fresh conversation."
+                        )
+
                 self.runtime_mode = "OFFLINE"
                 logger.error(
                     "Local fallback LLM %s also failed (%s). System is OFFLINE.",
                     getattr(self.fallback_provider, "provider_name", "local"),
                     type(fb_err).__name__,
                 )
-                raise
+                raise fb_err
 
         self.runtime_mode = "OFFLINE"
         raise RuntimeError("No LLM provider available (both primary and fallback are unconfigured or failed).")

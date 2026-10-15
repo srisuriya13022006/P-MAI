@@ -39,6 +39,7 @@ from app.voice.stt.mock import MockSTTProvider
 from app.voice.tts.base import TextToSpeechProvider
 from app.voice.tts.factory import create_tts_provider
 from app.voice.tts.mock import MockTTSProvider
+from app.voice.tts.preprocessor import SpeechTextPreprocessor
 from app.voice.vad.base import VoiceActivityDetector
 from app.voice.vad.detector import EnergyVADDetector
 
@@ -147,6 +148,7 @@ class VoicePipeline:
         self.orchestrator = orchestrator
         self.validator = AudioValidator(self.config)
         self.formatter = VoicePresentationFormatter()
+        self.preprocessor = SpeechTextPreprocessor()
 
         # Initialize providers
         self.stt_provider = stt_provider or self._resolve_stt_provider()
@@ -240,9 +242,13 @@ class VoicePipeline:
         status = "success"
 
         try:
-            formatted_speech = self.formatter.format_for_speech(text_response)
+            prep = self.preprocessor.preprocess(
+                text_response,
+                target_provider=getattr(self.tts_provider, "provider_name", "local"),
+                model_id=getattr(self.config, "elevenlabs_model_id", "eleven_v4_turbo"),
+            )
             tts_res = await self.tts_provider.synthesize(
-                text=formatted_speech,
+                text=prep.expressive_text,
                 voice=self.config.tts_voice,
                 language=stt_result.language or self.config.default_language,
             )

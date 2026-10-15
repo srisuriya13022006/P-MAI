@@ -516,3 +516,82 @@ def test_32_conversation_history_limit(voice_client):
         voice_client._append_history("User", f"Message {i}")
     assert len(voice_client.history) == voice_client.config.max_history_turns
     assert voice_client.history[-1]["text"] == "Message 29"
+
+
+# ---------------------------------------------------------------------------
+# 33. WebSocket Open State Detection
+# ---------------------------------------------------------------------------
+def test_33_is_ws_open_state_detection(voice_client):
+    assert voice_client.is_ws_open is False
+
+    mock_ws = AsyncMock()
+    mock_ws.closed = False
+    voice_client.ws = mock_ws
+    voice_client.is_connected = True
+    assert voice_client.is_ws_open is True
+
+    mock_ws.closed = True
+    assert voice_client.is_ws_open is False
+
+
+# ---------------------------------------------------------------------------
+# 34. Send Audio Chunk on Closed Connection Handled Safely
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_34_send_audio_chunk_on_closed_connection_handled(voice_client):
+    import websockets.exceptions
+    mock_ws = AsyncMock()
+    mock_ws.send = AsyncMock(side_effect=websockets.exceptions.ConnectionClosedError(None, None))
+    voice_client.ws = mock_ws
+    voice_client.is_connected = True
+
+    chunk = voice_client.device.generate_synthetic_chunk()
+    with pytest.raises(ConnectionError) as exc_info:
+        await voice_client.send_audio_chunk(chunk)
+
+    assert "Connection lost" in str(exc_info.value)
+    assert voice_client.is_connected is False
+    assert voice_client.state_machine.current_state == ClientUIState.DISCONNECTED
+    assert voice_client.buffered_audio_bytes == 0
+
+
+# ---------------------------------------------------------------------------
+# 35. Start Turn Auto-Reconnects Preserving Conversation Identity
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_35_start_turn_auto_reconnects_preserving_conversation(voice_client):
+    voice_client.is_connected = False
+    voice_client.ws = None
+    voice_client.config.conversation_id = "reconnect-conv-99"
+
+    mock_new_ws = AsyncMock()
+    mock_new_ws.closed = False
+    mock_new_ws.send = AsyncMock()
+
+    with patch("websockets.connect", new_callable=AsyncMock, return_value=mock_new_ws) as mock_connect:
+        await voice_client.start_turn()
+        assert voice_client.is_connected is True
+        assert voice_client.state_machine.current_state == ClientUIState.LISTENING
+        # Verify query URL preserved conversation_id
+        called_url = mock_connect.call_args[0][0]
+        assert "conversation_id=reconnect-conv-99" in called_url
+
+
+# ---------------------------------------------------------------------------
+# 36. Run Turn Handles Server Disconnect Cleanly
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_36_run_turn_handles_server_disconnect_cleanly(voice_client):
+    import websockets.exceptions
+    mock_ws = AsyncMock()
+    mock_ws.closed = False
+    mock_ws.send = AsyncMock()
+    mock_ws.recv = AsyncMock(side_effect=websockets.exceptions.ConnectionClosedOK(None, None))
+    voice_client.ws = mock_ws
+    voice_client.is_connected = True
+
+    chunks = [voice_client.device.generate_synthetic_chunk()]
+    result = await voice_client.run_turn(chunks)
+    assert voice_client.is_connected is False
+    assert voice_client.state_machine.current_state == ClientUIState.DISCONNECTED
+

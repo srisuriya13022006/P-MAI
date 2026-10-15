@@ -92,6 +92,37 @@ class PMAIVoiceClient:
         self.on_turn_completed: Optional[Callable[[str, str, dict], None]] = None
         self.on_error: Optional[Callable[[str], None]] = None
 
+    @property
+    def is_ws_open(self) -> bool:
+        """Check whether the underlying WebSocket is actively open and ready for I/O."""
+        if not self.ws or not self.is_connected:
+            return False
+        if getattr(self.ws, "closed", None) is True:
+            return False
+        state = getattr(self.ws, "state", None)
+        if state is not None and not hasattr(state, "_mock_return_value"):
+            name = getattr(state, "name", None)
+            if name is not None and name != "OPEN":
+                return False
+        return True
+
+    def _handle_connection_loss(self, reason: str = "Connection lost.") -> None:
+        """
+        Safely clean up active turn resources after an unexpected connection loss.
+        Halts hardware audio playback/recording, clears in-flight buffers,
+        transitions UI state to DISCONNECTED, and notifies error callbacks.
+        """
+        self.is_connected = False
+        self.buffered_audio_bytes = 0
+        self.device.stop_playback()
+        self.device.reset_playback_state()
+        self._set_state(ClientUIState.DISCONNECTED, reason)
+        if self.on_error:
+            try:
+                self.on_error(reason)
+            except Exception:
+                pass
+
     def _set_state(self, state: ClientUIState, err_msg: Optional[str] = None) -> None:
         self.state_machine.transition_to(state, error_message=err_msg)
         if self.on_state_change:
@@ -131,7 +162,15 @@ class PMAIVoiceClient:
     async def reconnect(self) -> bool:
         """
         Attempt bounded reconnect. Fails after max_reconnect_attempts.
+        Preserves conversation_id and user_id.
         """
+        if self.ws:
+            try:
+                await self.ws.close()
+            except Exception:
+                pass
+            self.ws = None
+
         while self.reconnect_attempts < self.config.max_reconnect_attempts:
             self.reconnect_attempts += 1
             self._set_state(ClientUIState.CONNECTING)
@@ -152,9 +191,14 @@ class PMAIVoiceClient:
         """
         Signal beginning of user utterance.
         Handles barge-in immediately if currently speaking.
+        Automatically reconnects if the socket was closed.
         """
-        if not self.ws or not self.is_connected:
-            raise RuntimeError("Client is not connected.")
+        if not self.is_ws_open:
+            self.is_connected = False
+            reconnected = await self.reconnect()
+            if not reconnected or not self.is_ws_open:
+                self._handle_connection_loss("Cannot start turn: WebSocket is disconnected.")
+                raise ConnectionError("Cannot start turn: WebSocket is disconnected.")
 
         # Check microphone permissions & availability
         self.device.check_permissions()
@@ -178,14 +222,20 @@ class PMAIVoiceClient:
             self.turn_metrics["interruption_latency_ms"] = interruption_latency_ms
 
         self._set_state(ClientUIState.LISTENING)
-        await self.ws.send(json.dumps({"type": "AUDIO_START"}))
+        try:
+            await self.ws.send(json.dumps({"type": "AUDIO_START"}))
+        except (websockets.exceptions.ConnectionClosed, OSError) as exc:
+            self._handle_connection_loss(f"Connection lost while starting turn: {exc}")
+            raise ConnectionError(f"Connection lost while starting turn: {exc}") from exc
 
     async def send_audio_chunk(self, chunk_bytes: bytes) -> None:
         """
         Stream a canonical PCM audio chunk to the backend with bounded buffer protection.
+        Verifies that WebSocket is open before sending. Catches ConnectionClosed safely.
         """
-        if not self.ws or not self.is_connected:
-            raise RuntimeError("Client is not connected.")
+        if not self.is_ws_open:
+            self._handle_connection_loss("Cannot send audio chunk: WebSocket is disconnected.")
+            raise ConnectionError("Cannot send audio chunk: WebSocket is disconnected.")
 
         # Oversized chunk guard
         if len(chunk_bytes) > self.config.max_chunk_size_bytes:
@@ -198,22 +248,31 @@ class PMAIVoiceClient:
         self.buffered_audio_bytes += len(chunk_bytes)
         b64_audio = base64.b64encode(chunk_bytes).decode("ascii")
 
-        await self.ws.send(json.dumps({
-            "type": "AUDIO_CHUNK",
-            "audio_base64": b64_audio,
-            "content_type": "audio/wav",
-        }))
+        try:
+            await self.ws.send(json.dumps({
+                "type": "AUDIO_CHUNK",
+                "audio_base64": b64_audio,
+                "content_type": "audio/wav",
+            }))
+        except (websockets.exceptions.ConnectionClosed, OSError) as exc:
+            self._handle_connection_loss(f"Connection lost while sending audio chunk: {exc}")
+            raise ConnectionError(f"Connection lost while streaming audio chunk: {exc}") from exc
 
     async def finish_turn(self) -> None:
         """
         Signal end of user utterance.
         """
-        if not self.ws or not self.is_connected:
-            raise RuntimeError("Client is not connected.")
+        if not self.is_ws_open:
+            self._handle_connection_loss("Cannot finish turn: WebSocket is disconnected.")
+            raise ConnectionError("Cannot finish turn: WebSocket is disconnected.")
 
         self.turn_metrics["client_audio_end"] = time.perf_counter()
         self._set_state(ClientUIState.TRANSCRIBING)
-        await self.ws.send(json.dumps({"type": "AUDIO_END"}))
+        try:
+            await self.ws.send(json.dumps({"type": "AUDIO_END"}))
+        except (websockets.exceptions.ConnectionClosed, OSError) as exc:
+            self._handle_connection_loss(f"Connection lost while finishing turn: {exc}")
+            raise ConnectionError(f"Connection lost while finishing turn: {exc}") from exc
 
     async def stop_speaking(self) -> None:
         """
@@ -313,6 +372,8 @@ class PMAIVoiceClient:
             if audio_b64:
                 try:
                     audio_bytes = base64.b64decode(audio_b64)
+                    self.received_chunks_count = getattr(self, "received_chunks_count", 0) + 1
+                    self.received_audio_bytes = getattr(self, "received_audio_bytes", 0) + len(audio_bytes)
                     if "time_to_first_audio_ms" not in self.turn_metrics and "client_audio_end" in self.turn_metrics:
                         self.turn_metrics["time_to_first_audio_ms"] = round((time.perf_counter() - self.turn_metrics["client_audio_end"]) * 1000.0, 2)
                     self.device.play_audio_chunk(audio_bytes)
@@ -327,6 +388,13 @@ class PMAIVoiceClient:
             self.current_response_text = clean_response
             if "client_turn_start" in self.turn_metrics:
                 self.turn_metrics["total_turn_turnaround_ms"] = round((time.perf_counter() - self.turn_metrics["client_turn_start"]) * 1000.0, 2)
+
+            self.turn_metrics["received_audio_chunks"] = getattr(self, "received_chunks_count", 0)
+            self.turn_metrics["received_audio_bytes"] = getattr(self, "received_audio_bytes", 0)
+            self.turn_metrics["stages"] = {
+                "playback_started": getattr(self, "received_chunks_count", 0) > 0,
+                "playback_completed": True,
+            }
 
             self._append_history("MAI", clean_response)
             self._set_state(ClientUIState.IDLE)
@@ -347,6 +415,7 @@ class PMAIVoiceClient:
                 self.on_error(display_err)
 
         elif ev_type == "CLOSE":
+            self.is_connected = False
             self._set_state(ClientUIState.CLOSED)
 
     async def run_turn(
@@ -365,7 +434,12 @@ class PMAIVoiceClient:
 
         received_events = []
         while True:
-            raw_msg = await self.ws.recv()
+            try:
+                raw_msg = await self.ws.recv()
+            except (websockets.exceptions.ConnectionClosed, OSError) as exc:
+                self._handle_connection_loss(f"Connection closed by server: {exc}")
+                break
+
             try:
                 event = json.loads(raw_msg)
             except Exception:

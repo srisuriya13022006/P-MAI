@@ -1,0 +1,85 @@
+[
+  {
+    "scenario": "1. Normal Conversation Response",
+    "selected_model": "gemini-2.5-flash",
+    "final_provider": "gemini",
+    "provider_attempts": 2,
+    "end_to_end_latency_ms": 22277.95,
+    "fallback_necessary": false,
+    "tools_ran_more_than_once": false,
+    "response_sample": "Inertia is the property of matter by which it continues in i"
+  },
+  {
+    "scenario": "2. Multi-turn Conversation",
+    "selected_model": "gemini-3.1-flash-lite",
+    "final_provider": "gemini",
+    "provider_attempts": 2,
+    "end_to_end_latency_ms": 10982.4,
+    "fallback_necessary": false,
+    "tools_ran_more_than_once": false,
+    "response_sample": "You haven't told me your favorite fruit yet. Would you like "
+  },
+  {
+    "scenario": "3. Agent Tool Call Request (Calculator)",
+    "selected_model": "local_calculator_fast_path",
+    "final_provider": "local_tool",
+    "provider_attempts": 1,
+    "end_to_end_latency_ms": 14.46,
+    "fallback_necessary": false,
+    "tools_ran_more_than_once": false,
+    "response_sample": "The calculation result is 1000."
+  },
+  {
+    "scenario": "4. Model-Specific RPM Rate Limit Failover",
+    "selected_model": "gemini-3.1-flash-lite",
+    "final_provider": "gemini",
+    "provider_attempts": 2,
+    "end_to_end_latency_ms": 2.79,
+    "fallback_necessary": true,
+    "tools_ran_more_than_once": false,
+    "response_sample": "Response from candidate gemini-3.1-flash-lite"
+  },
+  {
+    "scenario": "5. RPD Daily Exhaustion & Skip On Later Turns",
+    "selected_model": "gemini-3.1-flash-lite",
+    "final_provider": "gemini",
+    "provider_attempts": 1,
+    "end_to_end_latency_ms": 6.44,
+    "fallback_necessary": false,
+    "exhausted_model_skipped": true,
+    "tools_ran_more_than_once": false,
+    "response_sample": "Success from gemini-3.1-flash-lite"
+  },
+  {
+    "scenario": "6. Project-Wide Restriction Fast Failover to Groq",
+    "selected_model": "openai/gpt-oss-20b",
+    "final_provider": "groq",
+    "provider_attempts": 2,
+    "gemini_attempts": 1,
+    "end_to_end_latency_ms": 7.36,
+    "fallback_necessary": true,
+    "tools_ran_more_than_once": false,
+    "response_sample": "Response from Groq failover"
+  },
+  {
+    "scenario": "7. Groq Failure Followed by Ollama",
+    "selected_model": "qwen3:4b-instruct",
+    "final_provider": "ollama",
+    "provider_attempts": 3,
+    "end_to_end_latency_ms": 1.09,
+    "fallback_necessary": true,
+    "tools_ran_more_than_once": false,
+    "response_sample": "Response from Local Ollama"
+  },
+  {
+    "scenario": "8. Context-Overflow Emergency Reduction Protection",
+    "selected_model": "qwen3:4b-instruct",
+    "final_provider": "ollama",
+    "provider_attempts": 2,
+    "end_to_end_latency_ms": 230.42,
+    "fallback_necessary": true,
+    "recovery_succeeded": true,
+    "tools_ran_more_than_once": false,
+    "response_sample": "Response after prompt reduction"
+  }
+]
