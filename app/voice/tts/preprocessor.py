@@ -376,3 +376,7 @@ class SpeechTextPreprocessor:
             audio_tag=tag if supports_tags else None,
             segments=segments,
         )
+
+    # Alias for backwards compatibility
+    prepare = preprocess
+

@@ -487,35 +487,43 @@ class MAIOrchestrator:
             else:
                 max_tok = 800
 
-            effective_conv_messages = list(conversation_messages) if conversation_messages else [{"role": "user", "content": effective_message}]
+            if conversation_messages:
+                effective_conv_messages = list(conversation_messages)
+                if not effective_conv_messages or effective_conv_messages[-1].get("role") != "user":
+                    effective_conv_messages.append({"role": "user", "content": effective_message})
+                else:
+                    effective_conv_messages[-1] = {"role": "user", "content": effective_message}
+            else:
+                effective_conv_messages = [{"role": "user", "content": effective_message}]
+
             if ref_res and ref_res.is_reference_resolved and ref_res.contextual_followup_type:
-                if effective_conv_messages and effective_conv_messages[-1].get("role") == "user":
-                    orig_content = effective_conv_messages[-1]["content"]
-                    if ref_res.contextual_followup_type == "direct_answer":
-                        effective_conv_messages[-1] = {
-                            "role": "user",
-                            "content": (
-                                f"{orig_content}\n"
-                                f"[Context: The user is specifically demanding a direct, immediate answer to their previous question: '{ref_res.original_question}'. "
-                                f"Answer the question directly in your very first sentence without repeating previous explanations, disclaimers, or using honorifics like Sir.]"
-                            ),
-                        }
-                    elif ref_res.contextual_followup_type == "compare":
-                        effective_conv_messages[-1] = {
-                            "role": "user",
-                            "content": (
-                                f"{orig_content}\n"
-                                f"[Context: The user wants a direct comparison. State who or which is more capable directly in the first sentence, then briefly explain why.]"
-                            ),
-                        }
-                    elif ref_res.contextual_followup_type == "explain":
-                        effective_conv_messages[-1] = {
-                            "role": "user",
-                            "content": (
-                                f"{orig_content}\n"
-                                f"[Context: The user is asking for a clear explanation of what you meant in your previous statement.]"
-                            ),
-                        }
+                orig_content = effective_conv_messages[-1]["content"]
+                if ref_res.contextual_followup_type == "direct_answer":
+                    effective_conv_messages[-1] = {
+                        "role": "user",
+                        "content": (
+                            f"{orig_content}\n"
+                            f"[Context: The user is specifically demanding a direct, immediate answer to their previous question: '{ref_res.original_question}'. "
+                            f"Answer the question directly in your very first sentence without repeating previous explanations, disclaimers, or using honorifics like Sir.]"
+                        ),
+                    }
+                elif ref_res.contextual_followup_type == "compare":
+                    effective_conv_messages[-1] = {
+                        "role": "user",
+                        "content": (
+                            f"{orig_content}\n"
+                            f"[Context: The user wants a direct comparison. State who or which is more capable directly in the first sentence, then briefly explain why.]"
+                        ),
+                    }
+                elif ref_res.contextual_followup_type == "explain":
+                    ref_detail = f" regarding '{ref_res.original_question}'" if ref_res.original_question else ""
+                    effective_conv_messages[-1] = {
+                        "role": "user",
+                        "content": (
+                            f"{orig_content}\n"
+                            f"[Context: The user is asking for a clear, direct explanation of what you meant in your previous statement{ref_detail}. Explain it directly and concisely without repeating previous text verbatim.]"
+                        ),
+                    }
 
             try:
                 try:
@@ -571,35 +579,43 @@ class MAIOrchestrator:
                 return (
                     "Cloud provider is not configured yet. Add GEMINI_API_KEY or GROQ_API_KEY to enable the cloud model."
                 )
-            effective_conv_messages = list(conversation_messages) if conversation_messages else [{"role": "user", "content": effective_message}]
+            if conversation_messages:
+                effective_conv_messages = list(conversation_messages)
+                if not effective_conv_messages or effective_conv_messages[-1].get("role") != "user":
+                    effective_conv_messages.append({"role": "user", "content": effective_message})
+                else:
+                    effective_conv_messages[-1] = {"role": "user", "content": effective_message}
+            else:
+                effective_conv_messages = [{"role": "user", "content": effective_message}]
+
             if ref_res and ref_res.is_reference_resolved and ref_res.contextual_followup_type:
-                if effective_conv_messages and effective_conv_messages[-1].get("role") == "user":
-                    orig_content = effective_conv_messages[-1]["content"]
-                    if ref_res.contextual_followup_type == "direct_answer":
-                        effective_conv_messages[-1] = {
-                            "role": "user",
-                            "content": (
-                                f"{orig_content}\n"
-                                f"[Context: The user is specifically demanding a direct, immediate answer to their previous question: '{ref_res.original_question}'. "
-                                f"Answer the question directly in your very first sentence without repeating previous explanations, disclaimers, or using honorifics like Sir.]"
-                            ),
-                        }
-                    elif ref_res.contextual_followup_type == "compare":
-                        effective_conv_messages[-1] = {
-                            "role": "user",
-                            "content": (
-                                f"{orig_content}\n"
-                                f"[Context: The user wants a direct comparison. State who or which is more capable directly in the first sentence, then briefly explain why.]"
-                            ),
-                        }
-                    elif ref_res.contextual_followup_type == "explain":
-                        effective_conv_messages[-1] = {
-                            "role": "user",
-                            "content": (
-                                f"{orig_content}\n"
-                                f"[Context: The user is asking for a clear explanation of what you meant in your previous statement.]"
-                            ),
-                        }
+                orig_content = effective_conv_messages[-1]["content"]
+                if ref_res.contextual_followup_type == "direct_answer":
+                    effective_conv_messages[-1] = {
+                        "role": "user",
+                        "content": (
+                            f"{orig_content}\n"
+                            f"[Context: The user is specifically demanding a direct, immediate answer to their previous question: '{ref_res.original_question}'. "
+                            f"Answer the question directly in your very first sentence without repeating previous explanations, disclaimers, or using honorifics like Sir.]"
+                        ),
+                    }
+                elif ref_res.contextual_followup_type == "compare":
+                    effective_conv_messages[-1] = {
+                        "role": "user",
+                        "content": (
+                            f"{orig_content}\n"
+                            f"[Context: The user wants a direct comparison. State who or which is more capable directly in the first sentence, then briefly explain why.]"
+                        ),
+                    }
+                elif ref_res.contextual_followup_type == "explain":
+                    ref_detail = f" regarding '{ref_res.original_question}'" if ref_res.original_question else ""
+                    effective_conv_messages[-1] = {
+                        "role": "user",
+                        "content": (
+                            f"{orig_content}\n"
+                            f"[Context: The user is asking for a clear, direct explanation of what you meant in your previous statement{ref_detail}. Explain it directly and concisely without repeating previous text verbatim.]"
+                        ),
+                    }
             try:
                 try:
                     return target.generate(

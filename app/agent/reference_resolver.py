@@ -196,7 +196,14 @@ def resolve_task_reference(
     # 3b. Explanation Request ("What do you mean?", "Explain that", "Why is that?")
     if any(bool(re.match(p, lowered)) for p in EXPLAIN_PATTERNS):
         if last_assistant:
-            snippet = last_assistant.split(".")[0].strip() if "." in last_assistant else last_assistant[:120].strip()
+            first_line = last_assistant.split("\n")[0].strip()
+            if ":" in first_line or (len(first_line) > 30 and "." not in first_line):
+                snippet = first_line
+            elif "." in last_assistant:
+                first_sent = last_assistant.split(".")[0].strip()
+                snippet = first_sent if len(first_sent) > 20 else first_line
+            else:
+                snippet = last_assistant[:120].strip()
             return ReferenceResolutionResult(
                 resolved_message=f"Explain what you meant by: {snippet}",
                 is_reference_resolved=True,
