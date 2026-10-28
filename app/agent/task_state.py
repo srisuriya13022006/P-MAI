@@ -58,7 +58,11 @@ VALID_LIFECYCLE_TRANSITIONS: dict[TaskLifecycleStatus, set[TaskLifecycleStatus]]
     TaskLifecycleStatus.FAILED: {
         TaskLifecycleStatus.CANCELLED,
     },
-    TaskLifecycleStatus.CANCELLED: set(),  # Terminal state
+    TaskLifecycleStatus.CANCELLED: {
+        TaskLifecycleStatus.WAITING_FOR_USER,
+        TaskLifecycleStatus.RUNNING,
+        TaskLifecycleStatus.COMPLETED,
+    },
 }
 
 
@@ -80,6 +84,7 @@ class ActiveTaskState:
     unresolved_user_inputs: list[str] = field(default_factory=list)
     pending_clarification: Any = None
     pending_memory_write: dict[str, Any] | None = None
+    pending_skill_save: Any = None
     clarification_round_count: int = 0
     replan_count: int = 0
     total_tool_calls: int = 0
@@ -268,6 +273,7 @@ class ActiveTaskState:
             "unresolved_user_inputs": self.unresolved_user_inputs,
             "pending_clarification": self.pending_clarification.to_dict() if hasattr(self.pending_clarification, "to_dict") else None,
             "pending_memory_write": self.pending_memory_write,
+            "pending_skill_save": str(self.pending_skill_save) if self.pending_skill_save else None,
             "clarification_round_count": self.clarification_round_count,
             "replan_count": self.replan_count,
             "total_tool_calls": self.total_tool_calls,

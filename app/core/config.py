@@ -1,3 +1,4 @@
+import os
 from typing import Any
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,6 +57,19 @@ class Settings(BaseSettings):
     llm_provider: str = "cloud"  # 'cloud' (primary) or 'ollama' / 'local'
     cloud_llm_provider: str = "auto"  # 'auto' (prefers gemini, fails over to groq), 'gemini', or 'groq'
     llm_fallback_enabled: bool = True
+
+    # OpenRouter / NVIDIA Nemotron Settings (P16.1 Procedural Memory Dedicated LLM)
+    openrouter_api_key: str | None = None
+    open_router_api: str | None = None  # Support OPEN_ROUTER_API alias
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_nemotron_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    procedural_llm_provider: str = "openrouter"
+    openrouter_timeout_seconds: float = 30.0
+    openrouter_max_tokens: int = 1500
+
+    def get_openrouter_api_key(self) -> str | None:
+        return self.openrouter_api_key or self.open_router_api or os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPEN_ROUTER_API")
+
 
     database_url: str
     conversation_summary_interval: int = 10

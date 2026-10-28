@@ -14,12 +14,14 @@ from app.agent.task_state import TaskStateManager
 from app.database.repositories.conversations import ConversationRepository
 from app.database.repositories.messages import MessageRepository
 from app.database.repositories.memories import MemoryRepository
-from app.llm.factory import get_llm_provider
+from app.database.repositories.skills import SkillRepository
+from app.llm.factory import get_llm_provider, get_procedural_llm_provider
 from app.llm.ollama_provider import get_ollama_provider
 from app.memory.llm_extractor import LLMExtractionProvider
 from app.memory.service import MemoryService
 from app.memory.summarizer import ConversationSummarizer
 from app.services.message_mapper import to_llm_messages
+from app.skills.service import SkillService
 
 _default_task_state_manager = TaskStateManager()
 
@@ -40,6 +42,7 @@ class ChatService:
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
         self.memory_service = MemoryService(MemoryRepository(db), llm=provider)
+        self.skill_repo = SkillRepository(db)
         self.summarizer = ConversationSummarizer()
         self.task_state_manager = task_state_manager or _default_task_state_manager
 
@@ -48,6 +51,12 @@ class ChatService:
             llm=provider,
             task_state_manager=self.task_state_manager,
         )
+        self.skill_service = SkillService(
+            repository=self.skill_repo,
+            tool_registry=self.orchestrator.tool_registry,
+            procedural_llm=get_procedural_llm_provider(),
+        )
+        self.orchestrator.skill_service = self.skill_service
 
     def chat(
         self,

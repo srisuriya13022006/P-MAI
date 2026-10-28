@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from app.agent.permissions import PermissionManager
 from app.agent.policy import (
@@ -85,13 +86,31 @@ class MAIOrchestrator:
     def executor(self) -> PlanExecutor:
         return PlanExecutor(self.tool_registry, self.permission_manager)
 
+    @property
+    def skills(self):
+        if self.skill_service is None and self.memory_service and hasattr(self.memory_service, "repository") and hasattr(self.memory_service.repository, "db"):
+            try:
+                from app.database.repositories.skills import SkillRepository
+                from app.skills.service import SkillService
+                from app.llm.factory import get_procedural_llm_provider
+                self.skill_service = SkillService(
+                    repository=SkillRepository(self.memory_service.repository.db),
+                    tool_registry=self.tool_registry,
+                    procedural_llm=get_procedural_llm_provider(),
+                )
+            except Exception:
+                pass
+        return self.skill_service
+
     def __init__(
         self,
         memory_service: MemoryService | None = None,
         llm: LLMProvider | OllamaProvider | None = None,
         task_state_manager: TaskStateManager | None = None,
         replanner: ControlledReplanner | None = None,
+        skill_service: Any = None,
     ):
+        self.skill_service = skill_service
         self.llm = llm if llm is not None else get_llm_provider()
         self.router = RequestAnalyzer(llm=self.llm)
         self.cloud_llm = self._build_cloud_provider()
@@ -130,6 +149,196 @@ class MAIOrchestrator:
             return create_cloud_provider()
         except Exception:
             return None
+
+    def _handle_procedural_skill_query(
+        self,
+        user_message: str,
+        u_id: str,
+        conv_id: str,
+        active_task: ActiveTaskState | None,
+    ) -> str | None:
+        if not self.skills:
+            return None
+
+        msg_lower = user_message.lower().strip()
+
+        # 1. Proposal to save workflow as skill
+        save_match = re.search(
+            r"\b(?:save\s+(?:this\s+)?(?:workflow|task|skill)(?:\s+as)?|create\s+(?:a\s+)?(?:reusable\s+)?skill(?:\s+from\s+this\s+task)?(?:\s+as)?)\s+['\"]?([^'\"\.\n]+)['\"]?",
+            msg_lower,
+        ) or re.search(r"\bshow\s+(?:me\s+)?(?:the\s+)?workflow\s+before\s+saving\b", msg_lower)
+        if save_match:
+            if hasattr(save_match, "group") and save_match.lastindex and save_match.group(1):
+                skill_name = save_match.group(1).strip().strip("'\"")
+            else:
+                skill_name = "Saved Workflow"
+
+            if skill_name in ("it", "this", "before saving it", "before saving", "the workflow"):
+                skill_name = "Saved Workflow"
+
+            if skill_name.islower():
+                skill_name = skill_name.title()
+
+            target_task = active_task or self.task_state_manager.get_raw_task(u_id, conv_id)
+            if not target_task or (not target_task.completed_steps and not (target_task.current_plan and target_task.current_plan.steps)):
+                return "There is no completed task or workflow in this conversation to save as a skill."
+
+            try:
+                proposal = self.skills.propose_from_task(
+                    active_task=target_task,
+                    name=skill_name,
+                )
+                target_task.pending_skill_save = proposal
+                target_task.context_values["pending_skill_save"] = proposal
+                target_task.transition_to(TaskLifecycleStatus.WAITING_FOR_USER)
+                return proposal.to_confirmation_prompt()
+            except Exception as e:
+                return f"Could not create skill proposal: {e}"
+
+        # 2. List skills
+        if re.search(r"\b(?:what\s+skills?\s+(?:do\s+i\s+have|have\s+i\s+saved)|list\s+(?:all\s+)?(?:my\s+)?skills?|show\s+(?:all\s+)?(?:my\s+)?skills?)\b", msg_lower):
+            skills = self.skills.list_skills(user_id=u_id, active_only=False)
+            if not skills:
+                return "You haven't saved any procedural skills yet."
+
+            lines = [f"You have {len(skills)} saved skill(s):"]
+            for s in skills:
+                status_str = "active" if s.is_active else "disabled"
+                lines.append(f"• **{s.name}** (v{s.version}, {status_str}, used {s.usage_count} times) — {s.description}")
+            return "\n".join(lines)
+
+        # 3. View / Inspect skill
+        view_match = re.search(
+            r"\b(?:show\s+(?:me\s+)?(?:the\s+)?|view\s+(?:the\s+)?|inspect\s+(?:the\s+)?|describe\s+(?:the\s+)?)(.+?)\s+(?:skill|workflow)\b",
+            msg_lower,
+        ) or re.search(r"\b(?:show\s+(?:me\s+)?|view|inspect)\s+skill\s+['\"]?(.+?)['\"]?$", msg_lower)
+        if view_match and not any(k in msg_lower for k in ("save", "create", "delete", "disable", "enable", "run", "use", "which")):
+            candidate_name = view_match.group(1).strip().strip("'\"")
+            skill = self.skills.get_skill(u_id, candidate_name)
+            if not skill:
+                return f"I couldn't find a skill named '{candidate_name}'."
+
+            lines = [
+                f"**Skill: {skill.name}** (v{skill.version}, {'active' if skill.is_active else 'disabled'})",
+                f"• Description: {skill.description}",
+                f"• Purpose: {skill.intended_use or 'None specified'}",
+                f"• Used: {skill.usage_count} time(s)",
+            ]
+            if skill.parameters_schema:
+                lines.append("• Inputs: " + ", ".join(f"{k} ({v.get('type', 'string')})" for k, v in skill.parameters_schema.items()))
+            else:
+                lines.append("• Inputs: None (deterministic)")
+
+            lines.append("• Steps:")
+            for idx, st in enumerate(skill.steps, 1):
+                lines.append(f"  {idx}. {st.get('purpose', 'Execute')} (tool: `{st.get('tool_name')}`)")
+
+            if skill.recent_outcomes:
+                last_outcome = skill.recent_outcomes[-1]
+                lines.append(f"• Last Run: {'Success' if last_outcome.get('success') else 'Failed'} ({last_outcome.get('steps_executed', 0)} steps, {last_outcome.get('duration_ms', 0)}ms)")
+
+            return "\n".join(lines)
+
+        # 4. Disable / Enable / Delete
+        disable_match = re.search(r"\bdisable\s+skill\s+['\"]?(.+?)['\"]?$", msg_lower)
+        if disable_match:
+            s_name = disable_match.group(1).strip().strip("'\"")
+            ok = self.skills.disable_skill(u_id, s_name)
+            if ok:
+                return f"Skill '{s_name}' has been disabled."
+            return f"I couldn't find a skill named '{s_name}' to disable."
+
+        enable_match = re.search(r"\b(?:enable|reactivate)\s+skill\s+['\"]?(.+?)['\"]?$", msg_lower)
+        if enable_match:
+            s_name = enable_match.group(1).strip().strip("'\"")
+            ok = self.skills.reactivate_skill(u_id, s_name)
+            if ok:
+                return f"Skill '{s_name}' has been reactivated."
+            return f"I couldn't find a skill named '{s_name}' to reactivate."
+
+        delete_match = re.search(r"\bdelete\s+skill\s+['\"]?(.+?)['\"]?$", msg_lower)
+        if delete_match:
+            s_name = delete_match.group(1).strip().strip("'\"")
+            ok = self.skills.delete_skill(u_id, s_name)
+            if ok:
+                return f"Skill '{s_name}' has been deleted."
+            return f"I couldn't find a skill named '{s_name}' to delete."
+
+        # 5. Search / Discovery query
+        search_match = re.search(
+            r"\b(?:which\s+saved\s+workflow(?:\s+could\s+help\s+with)?|find\s+(?:my\s+)?(?:saved\s+)?(?:workflow|skill)(?:\s+for)?)\s+['\"]?(.+?)['\"]?$",
+            msg_lower,
+        )
+        if search_match and not any(k in msg_lower for k in ("run", "use", "execute", "save", "delete")):
+            query_task = search_match.group(1).strip().strip("'\"?")
+            outcome = self.skills.search_skills(u_id, query_task)
+            if outcome.is_ambiguous:
+                names = " or ".join(f"'{s.name}'" for s in outcome.ambiguous_candidates)
+                return f"I found multiple matching workflows: {names}. Which one would you like to use?"
+            if outcome.selected_skill:
+                s = outcome.selected_skill
+                return f"I found your saved skill '{s.name}': {s.description}. Would you like me to run it?"
+            return f"I couldn't find any matching saved workflows for '{query_task}'."
+
+        # 6. Execute skill
+        explicit_skill_keyword = bool(re.search(r"\b(?:skill|workflow)\b", user_message, re.IGNORECASE))
+        exec_match = re.search(
+            r"\b(?:use(?:\s+my)?|run|execute)\s+(?:the\s+)?(?:skill\s+|workflow\s+)?['\"]?([^'\"\n]+?)['\"]?(?:\s+skill|\s+workflow)?(?:\s+with\s+(.+))?$",
+            user_message,
+            re.IGNORECASE,
+        )
+        if exec_match:
+            candidate_target = exec_match.group(1).strip().strip("'\"")
+            candidate_target = re.sub(r"\s+(?:skill|workflow)$", "", candidate_target, flags=re.IGNORECASE).strip()
+            outcome = self.skills.search_skills(u_id, candidate_target)
+            if outcome.is_ambiguous:
+                names = " or ".join(f"'{s.name}'" for s in outcome.ambiguous_candidates)
+                return f"I found multiple matching workflows: {names}. Which one would you like to use?"
+            if outcome.selected_skill:
+                skill = outcome.selected_skill
+                params_str = exec_match.group(2) or ""
+
+                inputs: dict[str, Any] = {}
+                if params_str:
+                    kv_matches = re.findall(r"(\w+)\s*=\s*(?:['\"]([^'\"]+)['\"]|(\S+))", params_str)
+                    for m_k, m_v1, m_v2 in kv_matches:
+                        inputs[m_k] = m_v1 or m_v2
+
+                    if not inputs and len(skill.parameters_schema) == 1:
+                        single_param = next(iter(skill.parameters_schema))
+                        clean_val = params_str.strip().strip("'\"")
+                        inputs[single_param] = clean_val
+
+                schema = skill.parameters_schema or {}
+                missing = [
+                    k for k, v in schema.items()
+                    if (v.get("required", True) if isinstance(v, dict) else True) and k not in inputs
+                ]
+
+                if missing:
+                    if not active_task:
+                        active_task = self.task_state_manager.create_task(u_id, conv_id, goal=user_message)
+                    active_task.context_values["pending_skill_execution"] = {
+                        "skill_id": skill.id,
+                        "provided_inputs": inputs,
+                        "missing_param": missing[0],
+                    }
+                    active_task.transition_to(TaskLifecycleStatus.WAITING_FOR_USER)
+                    return f"Please provide the required '{missing[0]}' parameter for the '{skill.name}' skill."
+
+                res = self.skills.execute_skill(
+                    user_id=u_id,
+                    skill_id_or_name=skill.id,
+                    inputs=inputs,
+                    active_task=active_task,
+                )
+                if active_task:
+                    active_task.transition_to(TaskLifecycleStatus.COMPLETED if res.success else TaskLifecycleStatus.FAILED)
+                return res.output_summary
+            elif explicit_skill_keyword:
+                return f"I couldn't find a skill named '{candidate_target}'."
+
+        return None
 
     def handle(
         self,
@@ -246,6 +455,101 @@ class MAIOrchestrator:
                 # Unrelated request while WAITING_FOR_USER: do not authorize pending write
                 active_task.pending_memory_write = None
                 active_task.context_values.pop("pending_memory_write", None)
+
+        # 3a-2. Check for pending skill save confirmation
+        pending_skill = None
+        if active_task:
+            pending_skill = getattr(active_task, "pending_skill_save", None) or active_task.context_values.get("pending_skill_save")
+
+        if pending_skill and self.skills:
+            lowered = user_message.lower().strip()
+            normalized_confirm = re.sub(r"[^\w\s]", " ", lowered)
+            normalized_confirm = " ".join(normalized_confirm.split())
+
+            is_pos_confirm = bool(
+                re.match(
+                    r"^(?:yes(?:\s+please|\s+sure|\s+i\s+do)?|yeah|yep|sure|ok|okay|please\s+do|confirm|proceed|yes\s+save\s+it|sure\s+save\s+that|save\s+it|save\s+that|save\s+workflow|save\s+skill)$",
+                    normalized_confirm,
+                )
+            ) or bool(
+                re.match(
+                    r"^(?:yes|sure|please\s+save|save\s+it|save\s+that)\b",
+                    normalized_confirm,
+                )
+            )
+
+            is_neg_confirm = bool(
+                re.match(
+                    r"^(?:no(?:\s+thanks|\s+thank\s+you)?|nope|nah|dont\s+save\s+it|no\s+dont\s+save\s+that|dont\s+save(?:\s+that|\s+it)?|no\s+dont|cancel(?:\s+that)?|never\s+mind)$",
+                    normalized_confirm,
+                )
+            ) or bool(
+                re.match(
+                    r"^(?:no|dont\s+save|never\s+mind|cancel)\b",
+                    normalized_confirm,
+                )
+            )
+
+            if is_pos_confirm:
+                try:
+                    saved = self.skills.create_skill(
+                        user_id=u_id,
+                        name=pending_skill.name,
+                        description=pending_skill.description,
+                        steps=pending_skill.steps,
+                        parameters_schema=pending_skill.parameters_schema,
+                        intended_use=pending_skill.intended_use,
+                        completion_criteria=pending_skill.completion_criteria,
+                        provenance=pending_skill.provenance,
+                    )
+                    active_task.pending_skill_save = None
+                    active_task.context_values.pop("pending_skill_save", None)
+                    active_task.transition_to(TaskLifecycleStatus.COMPLETED)
+                    return f"I've saved the workflow as '{saved.name}'."
+                except Exception as e:
+                    active_task.pending_skill_save = None
+                    active_task.context_values.pop("pending_skill_save", None)
+                    active_task.transition_to(TaskLifecycleStatus.COMPLETED)
+                    return f"Failed to save skill: {e}"
+
+            elif is_neg_confirm:
+                active_task.pending_skill_save = None
+                active_task.context_values.pop("pending_skill_save", None)
+                active_task.transition_to(TaskLifecycleStatus.COMPLETED)
+                return "Understood, I won't save this workflow."
+
+            else:
+                active_task.pending_skill_save = None
+                active_task.context_values.pop("pending_skill_save", None)
+
+        # 3a-3. Check for pending skill execution parameter input
+        pending_exec = None
+        if active_task:
+            pending_exec = active_task.context_values.get("pending_skill_execution")
+
+        if pending_exec and self.skills:
+            skill_id = pending_exec.get("skill_id")
+            inputs = dict(pending_exec.get("provided_inputs", {}))
+            missing_param = pending_exec.get("missing_param")
+            skill = self.skills.get_skill(u_id, skill_id)
+            if skill and missing_param:
+                inputs[missing_param] = user_message.strip()
+                active_task.context_values.pop("pending_skill_execution", None)
+                res = self.skills.execute_skill(
+                    user_id=u_id,
+                    skill_id_or_name=skill.id,
+                    inputs=inputs,
+                    active_task=active_task,
+                )
+                active_task.transition_to(TaskLifecycleStatus.COMPLETED if res.success else TaskLifecycleStatus.FAILED)
+                return res.output_summary
+            else:
+                active_task.context_values.pop("pending_skill_execution", None)
+
+        # 3a-4. Check for direct procedural skill commands (save, list, inspect, disable, delete, search, run)
+        skill_res = self._handle_procedural_skill_query(user_message, u_id, conv_id, active_task)
+        if skill_res is not None:
+            return skill_res
 
         # 3b. Check if active task is currently waiting for user / has pending clarification
         effective_message = user_message

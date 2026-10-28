@@ -670,7 +670,9 @@ class PlanExecutor:
             return f"I remember: {details}."
 
         if result.tool_name == "web_search":
-            data = result.data or {}
+            if isinstance(result.data, str):
+                return result.data
+            data = result.data if isinstance(result.data, dict) else {}
             raw_results = data.get("results", [])
             raw_answer = data.get("answer")
 

@@ -130,6 +130,7 @@ def create_llm_provider(
 
 
 _canonical_llm_provider: LLMProvider | None = None
+_canonical_procedural_provider: LLMProvider | None = None
 
 
 def get_llm_provider() -> LLMProvider:
@@ -138,3 +139,44 @@ def get_llm_provider() -> LLMProvider:
     if _canonical_llm_provider is None:
         _canonical_llm_provider = create_llm_provider()
     return _canonical_llm_provider
+
+
+def create_procedural_llm_provider(settings_obj: Any = None) -> LLMProvider | None:
+    """
+    Construct dedicated LLM provider for procedural memory and reusable skills (P16.1).
+    Does NOT affect or replace global chat LLM provider chain.
+    """
+    cfg = settings_obj or settings
+    provider_name = getattr(cfg, "procedural_llm_provider", "openrouter").lower().strip()
+
+    if provider_name == "openrouter":
+        from app.llm.openrouter_nemotron_provider import OpenRouterNemotronProvider
+
+        key = (
+            (getattr(cfg, "get_openrouter_api_key", None)() if hasattr(cfg, "get_openrouter_api_key") else None)
+            or getattr(cfg, "openrouter_api_key", None)
+            or getattr(cfg, "open_router_api", None)
+            or os.environ.get("OPENROUTER_API_KEY")
+            or os.environ.get("OPEN_ROUTER_API")
+        )
+        if not key:
+            return None
+
+        return OpenRouterNemotronProvider(
+            api_key=key,
+            model=getattr(cfg, "openrouter_nemotron_model", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+            base_url=getattr(cfg, "openrouter_base_url", "https://openrouter.ai/api/v1"),
+            timeout=getattr(cfg, "openrouter_timeout_seconds", 30.0),
+            max_tokens=getattr(cfg, "openrouter_max_tokens", 1500),
+        )
+
+    return None
+
+
+def get_procedural_llm_provider() -> LLMProvider | None:
+    """Return shared canonical procedural LLM provider instance."""
+    global _canonical_procedural_provider
+    if _canonical_procedural_provider is None:
+        _canonical_procedural_provider = create_procedural_llm_provider()
+    return _canonical_procedural_provider
+
